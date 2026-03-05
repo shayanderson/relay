@@ -85,7 +85,7 @@ If you need to pass context to your handlers, you can use a event struct that in
 type testEventCtx struct { ctx context.Context }
 
 // create a new bus
-b := New()
+b := relay.New()
 ctx, cancel := context.WithCancel(context.Background())
 wg := sync.WaitGroup{} // to wait for handlers to finish
 
@@ -142,7 +142,6 @@ type EventBus interface {
   - `event` must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
 - `relay.EmitSync(event any)`: EmitSync emits an event on the default bus synchronously where handlers are invoked sequentially.
-
   - `event` must be a named struct or pointer to a named struct.
   - Blocks until all handlers for the event have completed.
 
