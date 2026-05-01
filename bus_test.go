@@ -410,21 +410,21 @@ func TestBus_Handlers(t *testing.T) {
 
 func TestMakeConfig(t *testing.T) {
 	c := makeConfig(Config{})
-	if c.MaxConcurrentHandlers != 16 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 16, got %d", c.MaxConcurrentHandlers)
+	if c.MaxConcurrentHandlers != 4 {
+		t.Fatalf("expected MaxConcurrentHandlers to be 4, got %d", c.MaxConcurrentHandlers)
 	}
 	if c.UseFullyQualifiedNames {
 		t.Fatal("expected UseFullyQualifiedNames to be false, got true")
 	}
 
 	c = makeConfig(Config{MaxConcurrentHandlers: 0})
-	if c.MaxConcurrentHandlers != 16 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 16, got %d", c.MaxConcurrentHandlers)
+	if c.MaxConcurrentHandlers != 4 {
+		t.Fatalf("expected MaxConcurrentHandlers to be 4, got %d", c.MaxConcurrentHandlers)
 	}
 
 	c = makeConfig(Config{MaxConcurrentHandlers: -1})
-	if c.MaxConcurrentHandlers != 16 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 16, got %d", c.MaxConcurrentHandlers)
+	if c.MaxConcurrentHandlers != 4 {
+		t.Fatalf("expected MaxConcurrentHandlers to be 4, got %d", c.MaxConcurrentHandlers)
 	}
 
 	c = makeConfig(Config{MaxConcurrentHandlers: 8})

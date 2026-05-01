@@ -60,7 +60,7 @@ You can create your own bus instance instead of using the global default:
 
 ```go
 bus := relay.New(relay.Config{ // config is optional
-    // max number of handlers to run concurrently, defaults to 16
+    // max number of handlers to run concurrently, defaults to 4
 	MaxConcurrentHandlers:  32,
     // use fully qualified names for event type keys, to avoid collisions in large projects
 	UseFullyQualifiedNames: true,
@@ -108,7 +108,7 @@ wg.Wait() // wait for all handlers to finish
 
 When creating a new bus, you can customize its behavior using `relay.Config`.
 
-- `MaxConcurrentHandlers`: Limits the number of event handlers that can run concurrently. Limit is for each bus instance. Default is `16`.
+- `MaxConcurrentHandlers`: Limits the number of event handlers that can run concurrently. Limit is for each bus instance. Default is `4`.
 - `UseFullyQualifiedNames`: If set to `true`, event type keys will include the package path, reducing the risk of type name collisions, e.g. `github.com/you/pkg.UserCreated` instead of just `pkg.UserCreated`. Default is `false`.
 
 ## API Overview

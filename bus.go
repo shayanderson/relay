@@ -30,7 +30,7 @@ func NewHandler[T any](fn func(event T)) (T, Handler) {
 
 // Config is the configuration for a Bus
 type Config struct {
-	MaxConcurrentHandlers  int  // max number of handlers to run concurrently, defaults to 16
+	MaxConcurrentHandlers  int  // max number of handlers to run concurrently, defaults to 4
 	UseFullyQualifiedNames bool // use fully qualified names for event type keys, defaults to false
 }
 
@@ -176,7 +176,7 @@ func (b *Bus) Handlers() map[string][]Handler {
 // makeConfig applies defaults to the config
 func makeConfig(config Config) Config {
 	if config.MaxConcurrentHandlers <= 0 {
-		config.MaxConcurrentHandlers = 16
+		config.MaxConcurrentHandlers = 4
 	}
 	return config
 }
