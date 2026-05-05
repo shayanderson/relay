@@ -1,6 +1,6 @@
 # relay 📡
 
-**relay** is a lightweight, type-safe, concurrent event bus for Go.
+**relay** is a lightweight, type-safe event bus with concurrent handler execution for Go.
 
 It allows you to register event handlers by type and emit events asynchronously (or synchronously) with automatic type checking and configurable concurrency limits.
 
@@ -62,15 +62,20 @@ You can create your own bus instance instead of using the global default:
 bus := relay.New(relay.Config{ // config is optional
     // max number of handlers to run concurrently, defaults to 4
 	MaxConcurrentHandlers:  32,
-    // use fully qualified names for event type keys, to avoid collisions in large projects
+    // use fully qualified names for event type keys to avoid collisions in large projects
 	UseFullyQualifiedNames: true,
 })
 
 type UserCreated struct{ Name string }
 
-bus.Handle(relay.NewHandler(func(e UserCreated) {
-	fmt.Println("new user:", e.Name)
-}))
+relay.On(bus, func(e UserCreated) {
+    fmt.Println("new user:", e.Name)
+})
+// or, can also:
+// bus.Handle(relay.NewHandler(func(e UserCreated) {
+// 	fmt.Println("new user:", e.Name)
+// }))
+
 bus.Emit(UserCreated{Name: "Alice"})
 // output:
 // new user: Alice
@@ -78,7 +83,7 @@ bus.Emit(UserCreated{Name: "Alice"})
 
 ### Context Example
 
-If you need to pass context to your handlers, you can use a event struct that includes a context field:
+If you need to pass context to your handlers, you can use an event struct that includes a context field:
 
 ```go
 // event with context
@@ -90,10 +95,10 @@ ctx, cancel := context.WithCancel(context.Background())
 wg := sync.WaitGroup{} // to wait for handlers to finish
 
 // register handler that respects context cancellation
-b.Handle(NewHandler(func(e testEventCtx) {
+relay.On(b, func(e testEventCtx) {
     defer wg.Done()
     <-e.ctx.Done()
-}))
+})
 
 // emit 3 events
 wg.Add(3)
@@ -113,6 +118,15 @@ When creating a new bus, you can customize its behavior using `relay.Config`.
 
 ## API Overview
 
+### Event Types
+
+Events must be defined as named struct types or pointers to named struct types.
+
+```go
+type MyEvent struct{}
+type MyEventPtr *MyEvent
+```
+
 ### Type Definitions
 
 ```go
@@ -131,35 +145,45 @@ type EventBus interface {
 }
 ```
 
+Additional methods available on concrete Bus implementation:
+
+```go
+type Bus struct {
+    EventBus
+    Cancel(handler Handler)
+    Handlers() map[string][]Handler
+}
+```
+
 ### Functions
 
 - `relay.New(config ...Config) *Bus`: Creates a new bus instance with the given configuration.
 - `relay.Default() EventBus`: Returns the current default bus instance.
-- `relay.Emit(event any)`: Emit emits an event on the default bus, where handlers are invoked sequentially in a single goroutine.
+- `relay.Emit(event any)`: Emits an event asynchronously, on the default bus, invoking handlers sequentially in a single goroutine.
   - `event` must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
-- `relay.EmitAsync(event any)`: EmitAsync emits an event on the default bus, asynchronously where all handlers are invoked in their own goroutine.
+- `relay.EmitAsync(event any)`: Emits an event on the default bus, invoking all handlers concurrently in separate goroutines.
   - `event` must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
-- `relay.EmitSync(event any)`: EmitSync emits an event on the default bus synchronously where handlers are invoked sequentially.
+- `relay.EmitSync(event any)`: Emits an event on the default bus synchronously where handlers are invoked sequentially.
   - `event` must be a named struct or pointer to a named struct.
   - Blocks until all handlers for the event have completed.
-
-- `relay.Handle[T any](fn func(event T))`: Registers a handler for type `T` on the default bus.
-  - `T` must be a named struct or pointer to a named struct.
+- `relay.Handle[T any](handler func(event T))`: Registers a handler for type `T` on the default bus.
+  - Handlers for type `T` are different from handlers for type `*T`. A separate handler must be registered for each if using both.
+- `relay.On[T any](bus EventBus, handler func(event T))`: Registers a handler for type `T` on the provided bus.
   - Handlers for type `T` are different from handlers for type `*T`. A separate handler must be registered for each if using both.
 - `relay.SetDefault(bus EventBus)`: Sets the default bus instance.
 
 ### Bus Methods
 
 - `Cancel(handler Handler)`: Cancels a previously registered handler.
-- `Emit(event any)`: Emits an event where handlers are invoked sequentially in a single goroutine.
+- `Emit(event any)`: Emits an event asynchronously, invoking handlers sequentially in a single goroutine.
   - `event` must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
-- `EmitAsync(event any)`: Emits an event asynchronously where all handlers are invoked in their own goroutine.
+- `EmitAsync(event any)`: Emits an event on the bus, invoking all handlers concurrently in separate goroutines.
   - `event` must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
-- `EmitSync(event any)`: Emits an event synchronously where handlers are invoked sequentially.
+- `EmitSync(event any)`: Emits an event on the bus synchronously where handlers are invoked sequentially.
   - `event` must be a named struct or pointer to a named struct.
   - Blocks until all handlers for the event have completed.
 - `Handle(event any, handler Handler)`: Registers a handler for the specified event type.

@@ -18,11 +18,16 @@ type Handler func(event any)
 // a struct vs a pointer to a struct are considered different types
 // panics if the function does not match the expected signature
 func NewHandler[T any](fn func(event T)) (T, Handler) {
+	if fn == nil {
+		panic("relay: handler function must not be nil")
+	}
 	var v T
 	return v, func(event any) {
 		e, ok := event.(T)
 		if !ok {
-			panic(fmt.Sprintf("handler expected event of type '%T', got '%T'", *new(T), event))
+			panic(fmt.Sprintf(
+				"relay: handler expected event of type '%T', got '%T'", *new(T), event,
+			))
 		}
 		fn(e)
 	}
@@ -91,7 +96,7 @@ func (b *Bus) Emit(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		panic(fmt.Sprintf("no handlers for event type '%s'", k))
+		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
 	}
 
 	b.sem <- struct{}{} // acquire, block if maxConcurrentHandlers reached
@@ -114,7 +119,7 @@ func (b *Bus) EmitAsync(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		panic(fmt.Sprintf("no handlers for event type '%s'", k))
+		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
 	}
 
 	for _, h := range handlers {
@@ -138,7 +143,7 @@ func (b *Bus) EmitSync(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		panic(fmt.Sprintf("no handlers for event type '%s'", k))
+		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
 	}
 
 	for _, h := range handlers {
@@ -154,7 +159,7 @@ func (b *Bus) Handle(event any, handler Handler) {
 	defer b.mu.Unlock()
 
 	if handler == nil {
-		panic("handler must not be nil")
+		panic("relay: handler must not be nil")
 	}
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 	if _, ok := b.handlers[k]; !ok {
@@ -188,7 +193,7 @@ func makeConfig(config Config) Config {
 // if full is false, uses short names (type only)
 func makeTypeKey(v any, full bool) string {
 	if v == nil {
-		panic("event must not be nil")
+		panic("relay: event must not be nil")
 	}
 	if !full {
 		return fmt.Sprintf("%T", v)
@@ -201,18 +206,22 @@ func makeTypeKey(v any, full bool) string {
 	case reflect.Pointer:
 		if t.Elem().Kind() != reflect.Struct {
 			panic(fmt.Sprintf(
-				"event must be a struct or pointer to struct, got pointer to '%s'",
+				"relay: event must be a struct or pointer to struct, got pointer to '%s'",
 				t.Elem().Kind(),
 			))
 		}
 		ptr = "*"
 		t = t.Elem()
 	default:
-		panic(fmt.Sprintf("event must be a struct or pointer to struct, got '%s'", t.Kind()))
+		panic(fmt.Sprintf("relay: event must be a struct or pointer to struct, got '%s'", t.Kind()))
 	}
 	name := t.Name()
 	if name == "" {
-		panic(fmt.Sprintf("event must be a named struct or pointer to named struct, got '%s'", t))
+		panic(
+			fmt.Sprintf(
+				"relay: event must be a named struct or pointer to named struct, got '%s'", t,
+			),
+		)
 	}
 	return ptr + t.PkgPath() + "." + name
 }

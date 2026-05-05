@@ -26,7 +26,7 @@ func TestNewHandler(t *testing.T) {
 	}
 
 	defer func() {
-		want := "handler expected event of type 'relay.testEvent', got 'int'"
+		want := "relay: handler expected event of type 'relay.testEvent', got 'int'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -196,7 +196,7 @@ func TestBus_Emit_maxHandlers(t *testing.T) {
 func TestBus_Emit_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
 	defer func() {
-		want := "no handlers for event type 'github.com/shayanderson/relay.testEvent'"
+		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -283,7 +283,7 @@ func TestBus_EmitAsync_maxHandlers(t *testing.T) {
 func TestBus_EmitAsync_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
 	defer func() {
-		want := "no handlers for event type 'github.com/shayanderson/relay.testEvent'"
+		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -337,7 +337,7 @@ func TestBus_EmitSync(t *testing.T) {
 func TestBus_EmitSync_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
 	defer func() {
-		want := "no handlers for event type 'github.com/shayanderson/relay.testEvent'"
+		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -368,7 +368,7 @@ func TestBus_EmitSync_multipleHandlers(t *testing.T) {
 func TestBus_Handle_nilHandler(t *testing.T) {
 	b := New()
 	defer func() {
-		want := "handler must not be nil"
+		want := "relay: handler must not be nil"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -466,7 +466,7 @@ func TestMakeTypeKey(t *testing.T) {
 
 func TestMakeTypeKey_nil(t *testing.T) {
 	defer func() {
-		want := "event must not be nil"
+		want := "relay: event must not be nil"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -477,7 +477,7 @@ func TestMakeTypeKey_nil(t *testing.T) {
 
 func TestMakeTypeKey_nonStruct(t *testing.T) {
 	defer func() {
-		want := "event must be a struct or pointer to struct, got 'int'"
+		want := "relay: event must be a struct or pointer to struct, got 'int'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -488,7 +488,7 @@ func TestMakeTypeKey_nonStruct(t *testing.T) {
 
 func TestMakeTypeKey_nonPointerStruct(t *testing.T) {
 	defer func() {
-		want := "event must be a struct or pointer to struct, got pointer to 'int'"
+		want := "relay: event must be a struct or pointer to struct, got pointer to 'int'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -499,7 +499,7 @@ func TestMakeTypeKey_nonPointerStruct(t *testing.T) {
 
 func TestMakeTypeKey_nonNamedStruct(t *testing.T) {
 	defer func() {
-		want := "event must be a named struct or pointer to named struct, got 'struct {}'"
+		want := "relay: event must be a named struct or pointer to named struct, got 'struct {}'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}

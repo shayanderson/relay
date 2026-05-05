@@ -57,7 +57,7 @@ func (d *defaultBus) set(b EventBus) {
 func Default() EventBus {
 	b := instance.get()
 	if b == nil {
-		panic("default bus is not set, use relay.SetDefault")
+		panic("relay: default bus is not set, use relay.SetDefault")
 	}
 	return b
 }
@@ -81,6 +81,15 @@ func EmitSync(event any) {
 // panics if the handler is nil
 func Handle[T any](handler func(event T)) {
 	Default().Handle(NewHandler(handler))
+}
+
+// On registers a handler for the given event type on the provided bus
+func On[T any](bus EventBus, handler func(event T)) {
+	if bus == nil {
+		panic("relay: bus cannot be nil")
+	}
+	e, h := NewHandler(handler)
+	bus.Handle(e, h)
 }
 
 // SetDefault sets the default bus instance
