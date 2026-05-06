@@ -76,20 +76,20 @@ func EmitSync(event any) {
 	Default().EmitSync(event)
 }
 
-// Handle registers a handler for the given event type on the default bus
-// panics if the event type is not a named struct or pointer to a named struct
-// panics if the handler is nil
-func Handle[T any](handler func(event T)) {
-	Default().Handle(NewHandler(handler))
-}
-
-// On registers a handler for the given event type on the provided bus
-func On[T any](bus EventBus, handler func(event T)) {
+// Handle registers a handler for the given event type on the provided bus
+func Handle[T any](bus EventBus, handler func(event T)) {
 	if bus == nil {
 		panic("relay: bus cannot be nil")
 	}
 	e, h := NewHandler(handler)
 	bus.Handle(e, h)
+}
+
+// On registers a handler for the given event type on the default bus
+// panics if the event type is not a named struct or pointer to a named struct
+// panics if the handler is nil
+func On[T any](handler func(event T)) {
+	Default().Handle(NewHandler(handler))
 }
 
 // SetDefault sets the default bus instance

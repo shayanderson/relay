@@ -77,7 +77,7 @@ func TestDefaultHandle(t *testing.T) {
 	b := New(Config{})
 	SetDefault(b)
 	var n atomic.Int32
-	Handle(func(e testEvent) {
+	Handle(b, func(e testEvent) {
 		n.Add(1)
 	})
 	EmitSync(testEvent{})
@@ -88,25 +88,10 @@ func TestDefaultHandle(t *testing.T) {
 	}
 }
 
-func TestDefaultOn(t *testing.T) {
-	b := New(Config{})
-	SetDefault(b)
-	var n atomic.Int32
-	On(b, func(e testEvent) {
-		n.Add(1)
-	})
-	EmitSync(testEvent{})
-	EmitSync(testEvent{})
-	EmitSync(testEvent{})
-	if n.Load() != 3 {
-		t.Fatalf("expected 3 events, got %d", n.Load())
-	}
-}
-
-func TestDefaultOn_bus(t *testing.T) {
+func TestDefaultHandle_bus(t *testing.T) {
 	b := New(Config{})
 	var n atomic.Int32
-	On(b, func(e testEvent) {
+	Handle(b, func(e testEvent) {
 		n.Add(1)
 	})
 	b.EmitSync(testEvent{})
@@ -117,18 +102,18 @@ func TestDefaultOn_bus(t *testing.T) {
 	}
 }
 
-func TestDefaultOn_nilBus(t *testing.T) {
+func TestDefaultHandle_nilBus(t *testing.T) {
 	defer func() {
 		want := "relay: bus cannot be nil"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	On(nil, func(e testEvent) {})
+	Handle(nil, func(e testEvent) {})
 	t.Fatal("expected panic, got none")
 }
 
-func TestDefaultOn_nilHandler(t *testing.T) {
+func TestDefaultHandle_nilHandler(t *testing.T) {
 	b := New(Config{})
 	SetDefault(b)
 	defer func() {
@@ -137,11 +122,11 @@ func TestDefaultOn_nilHandler(t *testing.T) {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	On[any](b, nil)
+	Handle[any](b, nil)
 	t.Fatal("expected panic, got none")
 }
 
-func TestDefaultOn_wrongEventType(t *testing.T) {
+func TestDefaultHandle_wrongEventType(t *testing.T) {
 	b := New(Config{})
 	SetDefault(b)
 	defer func() {
@@ -150,7 +135,22 @@ func TestDefaultOn_wrongEventType(t *testing.T) {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	On(b, func(e testEvent) {})
+	Handle(b, func(e testEvent) {})
 	EmitSync(123)
 	t.Fatal("expected panic, got none")
+}
+
+func TestDefaultOn(t *testing.T) {
+	b := New(Config{})
+	SetDefault(b)
+	var n atomic.Int32
+	On(func(e testEvent) {
+		n.Add(1)
+	})
+	EmitSync(testEvent{})
+	EmitSync(testEvent{})
+	EmitSync(testEvent{})
+	if n.Load() != 3 {
+		t.Fatalf("expected 3 events, got %d", n.Load())
+	}
 }
