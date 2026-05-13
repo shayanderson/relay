@@ -95,7 +95,7 @@ func (b *EventBus) Emit(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		return // no handlers, do nothing
+		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
 	}
 
 	b.sem <- struct{}{} // acquire, block if maxConcurrentHandlers reached
@@ -118,7 +118,7 @@ func (b *EventBus) EmitAsync(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		return // no handlers, do nothing
+		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
 	}
 
 	for _, h := range handlers {
@@ -142,7 +142,7 @@ func (b *EventBus) EmitSync(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		return // no handlers, do nothing
+		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
 	}
 
 	for _, h := range handlers {

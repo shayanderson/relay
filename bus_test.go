@@ -195,8 +195,14 @@ func TestBus_Emit_maxHandlers(t *testing.T) {
 
 func TestBus_Emit_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
+	defer func() {
+		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
+		if r := recover(); r != want {
+			t.Fatalf("expected panic '%s', got '%v'", want, r)
+		}
+	}()
 	b.Emit(testEvent{})
-	// no panic expected since Emit does not panic when no handlers are registered
+	t.Fatal("expected panic, got none")
 }
 
 func TestBus_Emit_multipleHandlers(t *testing.T) {
@@ -276,8 +282,14 @@ func TestBus_EmitAsync_maxHandlers(t *testing.T) {
 
 func TestBus_EmitAsync_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
+	defer func() {
+		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
+		if r := recover(); r != want {
+			t.Fatalf("expected panic '%s', got '%v'", want, r)
+		}
+	}()
 	b.EmitAsync(testEvent{})
-	// no panic expected since EmitAsync does not panic when no handlers are registered
+	t.Fatal("expected panic, got none")
 }
 
 func TestBus_EmitAsync_multipleHandlers(t *testing.T) {
@@ -324,8 +336,14 @@ func TestBus_EmitSync(t *testing.T) {
 
 func TestBus_EmitSync_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
+	defer func() {
+		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
+		if r := recover(); r != want {
+			t.Fatalf("expected panic '%s', got '%v'", want, r)
+		}
+	}()
 	b.EmitSync(testEvent{})
-	// no panic expected since EmitSync does not panic when no handlers are registered
+	t.Fatal("expected panic, got none")
 }
 
 func TestBus_EmitSync_multipleHandlers(t *testing.T) {
