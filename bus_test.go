@@ -195,14 +195,8 @@ func TestBus_Emit_maxHandlers(t *testing.T) {
 
 func TestBus_Emit_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
-	defer func() {
-		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
 	b.Emit(testEvent{})
-	t.Fatal("expected panic, got none")
+	// no panic expected since Emit does not panic when no handlers are registered
 }
 
 func TestBus_Emit_multipleHandlers(t *testing.T) {
@@ -282,14 +276,8 @@ func TestBus_EmitAsync_maxHandlers(t *testing.T) {
 
 func TestBus_EmitAsync_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
-	defer func() {
-		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
 	b.EmitAsync(testEvent{})
-	t.Fatal("expected panic, got none")
+	// no panic expected since EmitAsync does not panic when no handlers are registered
 }
 
 func TestBus_EmitAsync_multipleHandlers(t *testing.T) {
@@ -336,14 +324,8 @@ func TestBus_EmitSync(t *testing.T) {
 
 func TestBus_EmitSync_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
-	defer func() {
-		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
 	b.EmitSync(testEvent{})
-	t.Fatal("expected panic, got none")
+	// no panic expected since EmitSync does not panic when no handlers are registered
 }
 
 func TestBus_EmitSync_multipleHandlers(t *testing.T) {
@@ -514,7 +496,7 @@ func BenchmarkEmit(b *testing.B) {
 			bus := New()
 			wg := sync.WaitGroup{}
 			var c atomic.Int32
-			for range 1000 {
+			for range n {
 				bus.Handle(NewHandler(func(e testEvent) {
 					defer wg.Done()
 					c.Add(1)
@@ -522,12 +504,12 @@ func BenchmarkEmit(b *testing.B) {
 			}
 			b.ResetTimer()
 			for b.Loop() {
-				wg.Add(1000)
+				wg.Add(n)
 				bus.Emit(testEvent{})
 			}
 			b.StopTimer()
 			wg.Wait()
-			if got, want := c.Load(), int32(b.N*1000); got != want {
+			if got, want := c.Load(), int32(b.N*n); got != want {
 				b.Fatalf("expected %d events, got %d", want, got)
 			}
 		})
@@ -540,7 +522,7 @@ func BenchmarkEmitAsync(b *testing.B) {
 			bus := New()
 			wg := sync.WaitGroup{}
 			var c atomic.Int32
-			for range 1000 {
+			for range n {
 				bus.Handle(NewHandler(func(e testEvent) {
 					defer wg.Done()
 					c.Add(1)
@@ -548,12 +530,12 @@ func BenchmarkEmitAsync(b *testing.B) {
 			}
 			b.ResetTimer()
 			for b.Loop() {
-				wg.Add(1000)
+				wg.Add(n)
 				bus.EmitAsync(testEvent{})
 			}
 			b.StopTimer()
 			wg.Wait()
-			if got, want := c.Load(), int32(b.N*1000); got != want {
+			if got, want := c.Load(), int32(b.N*n); got != want {
 				b.Fatalf("expected %d events, got %d", want, got)
 			}
 		})
@@ -565,7 +547,7 @@ func BenchmarkEmitSync(b *testing.B) {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
 			bus := New()
 			var c atomic.Int32
-			for range 1000 {
+			for range n {
 				bus.Handle(NewHandler(func(e testEvent) {
 					c.Add(1)
 				}))
@@ -575,7 +557,7 @@ func BenchmarkEmitSync(b *testing.B) {
 				bus.EmitSync(testEvent{})
 			}
 			b.StopTimer()
-			if got, want := c.Load(), int32(b.N*1000); got != want {
+			if got, want := c.Load(), int32(b.N*n); got != want {
 				b.Fatalf("expected %d events, got %d", want, got)
 			}
 		})

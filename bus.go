@@ -2,7 +2,6 @@ package relay
 
 import (
 	"fmt"
-	"maps"
 	"reflect"
 	"sync"
 )
@@ -33,29 +32,29 @@ func NewHandler[T any](fn func(event T)) (T, Handler) {
 	}
 }
 
-// Config is the configuration for a Bus
+// Config is the configuration for a EventBus
 type Config struct {
 	MaxConcurrentHandlers  int  // max number of handlers to run concurrently, defaults to 4
 	UseFullyQualifiedNames bool // use fully qualified names for event type keys, defaults to false
 }
 
-// Bus is the event Bus
-type Bus struct {
+// EventBus is the event EventBus
+type EventBus struct {
 	config   Config
 	handlers map[string][]Handler
 	mu       sync.RWMutex
 	sem      chan struct{}
 }
 
-// New creates a new Bus with the given configuration
+// New creates a new EventBus with the given configuration
 // if no configuration is provided, defaults are used
-func New(config ...Config) *Bus {
+func New(config ...Config) *EventBus {
 	var cfg Config
 	if len(config) > 0 {
 		cfg = config[0]
 	}
 	cfg = makeConfig(cfg)
-	return &Bus{
+	return &EventBus{
 		config:   cfg,
 		handlers: map[string][]Handler{},
 		sem:      make(chan struct{}, cfg.MaxConcurrentHandlers),
@@ -64,7 +63,7 @@ func New(config ...Config) *Bus {
 
 // Cancel removes a previously registered handler
 // if the handler is not found, does nothing
-func (b *Bus) Cancel(handler Handler) {
+func (b *EventBus) Cancel(handler Handler) {
 	id := reflect.ValueOf(handler).Pointer()
 
 	b.mu.Lock()
@@ -88,7 +87,7 @@ func (b *Bus) Cancel(handler Handler) {
 // Emit emits an event where handlers are invoked sequentially in a single goroutine
 // non-blocking unless the max concurrency limit is reached
 // panics if no handlers are registered for the event type
-func (b *Bus) Emit(event any) {
+func (b *EventBus) Emit(event any) {
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 
 	b.mu.RLock()
@@ -96,7 +95,7 @@ func (b *Bus) Emit(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
+		return // no handlers, do nothing
 	}
 
 	b.sem <- struct{}{} // acquire, block if maxConcurrentHandlers reached
@@ -111,7 +110,7 @@ func (b *Bus) Emit(event any) {
 // EmitAsync emits an event asynchronously where all handlers are invoked in their own goroutine
 // non-blocking unless the max concurrency limit is reached
 // panics if no handlers are registered for the event type
-func (b *Bus) EmitAsync(event any) {
+func (b *EventBus) EmitAsync(event any) {
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 
 	b.mu.RLock()
@@ -119,7 +118,7 @@ func (b *Bus) EmitAsync(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
+		return // no handlers, do nothing
 	}
 
 	for _, h := range handlers {
@@ -135,7 +134,7 @@ func (b *Bus) EmitAsync(event any) {
 // EmitSync emits an event synchronously where handlers are invoked sequentially
 // blocking until all handlers are done
 // panics if no handlers are registered for the event type
-func (b *Bus) EmitSync(event any) {
+func (b *EventBus) EmitSync(event any) {
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 
 	b.mu.RLock()
@@ -143,7 +142,7 @@ func (b *Bus) EmitSync(event any) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		panic(fmt.Sprintf("relay: no handlers for event type '%s'", k))
+		return // no handlers, do nothing
 	}
 
 	for _, h := range handlers {
@@ -154,7 +153,7 @@ func (b *Bus) EmitSync(event any) {
 // Handle registers a handler for the given event type
 // panics if the event type is not a named struct or pointer to a named struct
 // panics if the handler is nil
-func (b *Bus) Handle(event any, handler Handler) {
+func (b *EventBus) Handle(event any, handler Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -169,12 +168,14 @@ func (b *Bus) Handle(event any, handler Handler) {
 }
 
 // Handlers returns a copy of the map of registered handlers
-func (b *Bus) Handlers() map[string][]Handler {
+func (b *EventBus) Handlers() map[string][]Handler {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	m := make(map[string][]Handler, len(b.handlers))
-	maps.Copy(m, b.handlers)
+	for k, v := range b.handlers {
+		m[k] = append([]Handler{}, v...)
+	}
 	return m
 }
 

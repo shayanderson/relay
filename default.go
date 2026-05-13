@@ -4,8 +4,8 @@ import (
 	"sync"
 )
 
-// EventBus is the interface for an event bus
-type EventBus interface {
+// Bus is the interface for an event bus
+type Bus interface {
 	// Emit emits an event where handlers are invoked sequentially in a single goroutine
 	// non-blocking unless the max concurrency limit is reached
 	// panics if no handlers are registered for the event type
@@ -35,26 +35,26 @@ func init() {
 
 // defaultBus is a thread-safe wrapper around a the default bus instance
 type defaultBus struct {
-	bus EventBus
+	bus Bus
 	mu  sync.RWMutex
 }
 
 // get returns the current default bus instance
-func (d *defaultBus) get() EventBus {
+func (d *defaultBus) get() Bus {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.bus
 }
 
 // set sets the current default bus instance
-func (d *defaultBus) set(b EventBus) {
+func (d *defaultBus) set(b Bus) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.bus = b
 }
 
 // Default returns the current default bus instance
-func Default() EventBus {
+func Default() Bus {
 	b := instance.get()
 	if b == nil {
 		panic("relay: default bus is not set, use relay.SetDefault")
@@ -77,7 +77,7 @@ func EmitSync(event any) {
 }
 
 // Handle registers a handler for the given event type on the provided bus
-func Handle[T any](bus EventBus, handler func(event T)) {
+func Handle[T any](bus Bus, handler func(event T)) {
 	if bus == nil {
 		panic("relay: bus cannot be nil")
 	}
@@ -93,6 +93,6 @@ func On[T any](handler func(event T)) {
 }
 
 // SetDefault sets the default bus instance
-func SetDefault(b EventBus) {
+func SetDefault(b Bus) {
 	instance.set(b)
 }

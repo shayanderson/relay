@@ -137,7 +137,7 @@ type Config struct {
     UseFullyQualifiedNames bool
 }
 
-type EventBus interface {
+type Bus interface {
     Emit(event any)
 	EmitAsync(event any)
     EmitSync(event any)
@@ -148,17 +148,18 @@ type EventBus interface {
 Additional methods available on concrete Bus implementation:
 
 ```go
-type Bus struct {
-    EventBus
-    Cancel(handler Handler)
-    Handlers() map[string][]Handler
+type EventBus struct {
+    // unexported fields
 }
+
+func (*EventBus) Cancel(Handler)
+func (*EventBus) Handlers() map[string][]Handler
 ```
 
 ### Functions
 
-- `relay.New(config ...Config) *Bus`: Creates a new bus instance with the given configuration.
-- `relay.Default() EventBus`: Returns the current default bus instance.
+- `relay.New(config ...Config) *EventBus`: Creates a new bus instance with the given configuration.
+- `relay.Default() Bus`: Returns the current default bus instance.
 - `relay.Emit(event any)`: Emits an event asynchronously on the default bus, invoking handlers sequentially in a single goroutine.
   - `event` must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
@@ -168,11 +169,11 @@ type Bus struct {
 - `relay.EmitSync(event any)`: Emits an event on the default bus synchronously, handlers are invoked sequentially.
   - `event` must be a named struct or pointer to a named struct.
   - Blocks until all handlers for the event have completed.
-- `relay.Handle[T any](bus EventBus, handler func(event T))`: Registers a handler for type `T` on the provided bus.
+- `relay.Handle[T any](bus Bus, handler func(event T))`: Registers a handler for type `T` on the provided bus.
   - Handlers for type `T` are different from handlers for type `*T`. A separate handler must be registered for each if using both.
 - `relay.On[T any](handler func(event T))`: Registers a handler for type `T` on the default bus.
   - Handlers for type `T` are different from handlers for type `*T`. A separate handler must be registered for each if using both.
-- `relay.SetDefault(bus EventBus)`: Sets the default bus instance.
+- `relay.SetDefault(bus Bus)`: Sets the default bus instance.
 
 ### Bus Methods
 
