@@ -14,9 +14,9 @@ type testEvent struct {
 	cancel context.CancelFunc
 }
 
-func TestNewHandler(t *testing.T) {
+func TestNewHandlerFunc(t *testing.T) {
 	type testEvent struct{ name string }
-	v, h := NewHandler(func(event testEvent) {
+	v, h := NewHandlerFunc(func(event testEvent) {
 		if event.name != "test" {
 			t.Fatalf("expected event 'test', got '%s'", event.name)
 		}
@@ -50,16 +50,16 @@ func TestNew(t *testing.T) {
 
 func TestBus_Cancel(t *testing.T) {
 	b := New()
-	_, h1 := NewHandler(func(e testEvent) {})
-	_, h2 := NewHandler(func(e testEvent) {})
-	_, h3 := NewHandler(func(e testEvent) {})
+	_, h1 := NewHandlerFunc(func(e testEvent) {})
+	_, h2 := NewHandlerFunc(func(e testEvent) {})
+	_, h3 := NewHandlerFunc(func(e testEvent) {})
 	b.Handle(testEvent{}, h1)
 	b.Handle(testEvent{}, h2)
 	b.Handle(testEvent{}, h3)
 	k := makeTypeKey(testEvent{}, b.config.UseFullyQualifiedNames)
 
 	type testEvent2 struct{}
-	_, h4 := NewHandler(func(e testEvent2) {})
+	_, h4 := NewHandlerFunc(func(e testEvent2) {})
 	b.Handle(testEvent2{}, h4)
 	k2 := makeTypeKey(testEvent2{}, b.config.UseFullyQualifiedNames)
 
@@ -155,7 +155,7 @@ func TestBus_Emit(t *testing.T) {
 			e.cancel()
 		}
 	}
-	b.Handle(NewHandler(h))
+	b.Handle(NewHandlerFunc(h))
 	b.Emit(testEvent{cancel: cancel})
 	b.Emit(testEvent{cancel: cancel})
 	b.Emit(testEvent{cancel: cancel})
@@ -176,7 +176,7 @@ func TestBus_Emit_maxHandlers(t *testing.T) {
 			e.cancel()
 		}
 	}
-	b.Handle(NewHandler(h))
+	b.Handle(NewHandlerFunc(h))
 	go func() {
 		b.Emit(testEvent{cancel: cancel})
 		b.Emit(testEvent{cancel: cancel})
@@ -221,8 +221,8 @@ func TestBus_Emit_multipleHandlers(t *testing.T) {
 			e.cancel()
 		}
 	}
-	b.Handle(NewHandler(h1))
-	b.Handle(NewHandler(h2))
+	b.Handle(NewHandlerFunc(h1))
+	b.Handle(NewHandlerFunc(h2))
 	b.Emit(testEvent{cancel: cancel})
 	b.Emit(testEvent{cancel: cancel})
 	b.Emit(testEvent{cancel: cancel})
@@ -232,7 +232,7 @@ func TestBus_Emit_multipleHandlers(t *testing.T) {
 	}
 }
 
-func TestBus_EmitAsync(t *testing.T) {
+func TestBus_EmitConcurrent(t *testing.T) {
 	b := New()
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
@@ -242,17 +242,17 @@ func TestBus_EmitAsync(t *testing.T) {
 			e.cancel()
 		}
 	}
-	b.Handle(NewHandler(h))
-	b.EmitAsync(testEvent{cancel: cancel})
-	b.EmitAsync(testEvent{cancel: cancel})
-	b.EmitAsync(testEvent{cancel: cancel})
+	b.Handle(NewHandlerFunc(h))
+	b.EmitConcurrent(testEvent{cancel: cancel})
+	b.EmitConcurrent(testEvent{cancel: cancel})
+	b.EmitConcurrent(testEvent{cancel: cancel})
 	<-ctx.Done()
 	if n.Load() != 3 {
 		t.Fatalf("expected 3 events, got %d", n.Load())
 	}
 }
 
-func TestBus_EmitAsync_maxHandlers(t *testing.T) {
+func TestBus_EmitConcurrent_maxHandlers(t *testing.T) {
 	b := New(Config{MaxConcurrentHandlers: 1})
 	b.sem <- struct{}{} // acquire
 	var n atomic.Int32
@@ -263,11 +263,11 @@ func TestBus_EmitAsync_maxHandlers(t *testing.T) {
 			e.cancel()
 		}
 	}
-	b.Handle(NewHandler(h))
+	b.Handle(NewHandlerFunc(h))
 	go func() {
-		b.EmitAsync(testEvent{cancel: cancel})
-		b.EmitAsync(testEvent{cancel: cancel})
-		b.EmitAsync(testEvent{cancel: cancel})
+		b.EmitConcurrent(testEvent{cancel: cancel})
+		b.EmitConcurrent(testEvent{cancel: cancel})
+		b.EmitConcurrent(testEvent{cancel: cancel})
 	}()
 	time.Sleep(time.Millisecond)
 	if n.Load() != 0 {
@@ -280,7 +280,7 @@ func TestBus_EmitAsync_maxHandlers(t *testing.T) {
 	}
 }
 
-func TestBus_EmitAsync_noHandler(t *testing.T) {
+func TestBus_EmitConcurrent_noHandler(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
 	defer func() {
 		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
@@ -288,11 +288,11 @@ func TestBus_EmitAsync_noHandler(t *testing.T) {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	b.EmitAsync(testEvent{})
+	b.EmitConcurrent(testEvent{})
 	t.Fatal("expected panic, got none")
 }
 
-func TestBus_EmitAsync_multipleHandlers(t *testing.T) {
+func TestBus_EmitConcurrent_multipleHandlers(t *testing.T) {
 	b := New()
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
@@ -308,11 +308,11 @@ func TestBus_EmitAsync_multipleHandlers(t *testing.T) {
 			e.cancel()
 		}
 	}
-	b.Handle(NewHandler(h1))
-	b.Handle(NewHandler(h2))
-	b.EmitAsync(testEvent{cancel: cancel})
-	b.EmitAsync(testEvent{cancel: cancel})
-	b.EmitAsync(testEvent{cancel: cancel})
+	b.Handle(NewHandlerFunc(h1))
+	b.Handle(NewHandlerFunc(h2))
+	b.EmitConcurrent(testEvent{cancel: cancel})
+	b.EmitConcurrent(testEvent{cancel: cancel})
+	b.EmitConcurrent(testEvent{cancel: cancel})
 	<-ctx.Done()
 	if n.Load() != 9 {
 		t.Fatalf("expected 9 events, got %d", n.Load())
@@ -325,7 +325,7 @@ func TestBus_EmitSync(t *testing.T) {
 	h := func(e testEvent) {
 		n.Add(1)
 	}
-	b.Handle(NewHandler(h))
+	b.Handle(NewHandlerFunc(h))
 	b.EmitSync(testEvent{})
 	b.EmitSync(testEvent{})
 	b.EmitSync(testEvent{})
@@ -355,8 +355,8 @@ func TestBus_EmitSync_multipleHandlers(t *testing.T) {
 	h2 := func(e testEvent) {
 		n.Add(2)
 	}
-	b.Handle(NewHandler(h1))
-	b.Handle(NewHandler(h2))
+	b.Handle(NewHandlerFunc(h1))
+	b.Handle(NewHandlerFunc(h2))
 	b.EmitSync(testEvent{})
 	b.EmitSync(testEvent{})
 	b.EmitSync(testEvent{})
@@ -368,7 +368,7 @@ func TestBus_EmitSync_multipleHandlers(t *testing.T) {
 func TestBus_Handle_nilHandler(t *testing.T) {
 	b := New()
 	defer func() {
-		want := "relay: handler must not be nil"
+		want := "relay: handler function must not be nil"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -381,11 +381,11 @@ func TestBus_Handlers(t *testing.T) {
 	b := New(Config{UseFullyQualifiedNames: true})
 	h1 := func(e testEvent) {}
 	h2 := func(e testEvent) {}
-	b.Handle(NewHandler(h1))
-	b.Handle(NewHandler(h2))
+	b.Handle(NewHandlerFunc(h1))
+	b.Handle(NewHandlerFunc(h2))
 	type testEvent2 struct{}
 	h3 := func(e testEvent2) {}
-	b.Handle(NewHandler(h3))
+	b.Handle(NewHandlerFunc(h3))
 	handlers := b.Handlers()
 	if len(handlers) != 2 {
 		t.Fatalf("expected 2 handlers, got %d", len(handlers))
@@ -515,7 +515,7 @@ func BenchmarkEmit(b *testing.B) {
 			wg := sync.WaitGroup{}
 			var c atomic.Int32
 			for range n {
-				bus.Handle(NewHandler(func(e testEvent) {
+				bus.Handle(NewHandlerFunc(func(e testEvent) {
 					defer wg.Done()
 					c.Add(1)
 				}))
@@ -534,14 +534,14 @@ func BenchmarkEmit(b *testing.B) {
 	}
 }
 
-func BenchmarkEmitAsync(b *testing.B) {
+func BenchmarkEmitConcurrent(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
 			bus := New()
 			wg := sync.WaitGroup{}
 			var c atomic.Int32
 			for range n {
-				bus.Handle(NewHandler(func(e testEvent) {
+				bus.Handle(NewHandlerFunc(func(e testEvent) {
 					defer wg.Done()
 					c.Add(1)
 				}))
@@ -549,7 +549,7 @@ func BenchmarkEmitAsync(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				wg.Add(n)
-				bus.EmitAsync(testEvent{})
+				bus.EmitConcurrent(testEvent{})
 			}
 			b.StopTimer()
 			wg.Wait()
@@ -566,7 +566,7 @@ func BenchmarkEmitSync(b *testing.B) {
 			bus := New()
 			var c atomic.Int32
 			for range n {
-				bus.Handle(NewHandler(func(e testEvent) {
+				bus.Handle(NewHandlerFunc(func(e testEvent) {
 					c.Add(1)
 				}))
 			}

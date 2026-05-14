@@ -44,7 +44,7 @@ func TestDefaultEmit(t *testing.T) {
 	SetDefault(b)
 	var wg sync.WaitGroup
 	var c atomic.Int32
-	b.Handle(NewHandler(func(e testEvent) {
+	b.Handle(NewHandlerFunc(func(e testEvent) {
 		defer wg.Done()
 		c.Add(1)
 	}))
@@ -62,7 +62,7 @@ func TestDefaultEmitSync(t *testing.T) {
 	b := New(Config{})
 	SetDefault(b)
 	var c atomic.Int32
-	b.Handle(NewHandler(func(e testEvent) {
+	b.Handle(NewHandlerFunc(func(e testEvent) {
 		c.Add(1)
 	}))
 	EmitSync(testEvent{})
@@ -102,9 +102,9 @@ func TestDefaultHandle_bus(t *testing.T) {
 	}
 }
 
-func TestDefaultHandle_nilBus(t *testing.T) {
+func TestDefaultHandle_nilHandler(t *testing.T) {
 	defer func() {
-		want := "relay: bus cannot be nil"
+		want := "relay: handler must not be nil"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -113,7 +113,7 @@ func TestDefaultHandle_nilBus(t *testing.T) {
 	t.Fatal("expected panic, got none")
 }
 
-func TestDefaultHandle_nilHandler(t *testing.T) {
+func TestDefaultHandle_nilHandlerFunc(t *testing.T) {
 	b := New(Config{})
 	SetDefault(b)
 	defer func() {

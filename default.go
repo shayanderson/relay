@@ -4,24 +4,37 @@ import (
 	"sync"
 )
 
-// Bus is the interface for an event bus
-type Bus interface {
-	// Emit emits an event where handlers are invoked sequentially in a single goroutine
+// Emitter is an interface for emitting events
+type Emitter interface {
+	// Emit emits an event where handler functions are invoked sequentially in a single goroutine
 	// non-blocking unless the max concurrency limit is reached
 	// panics if no handlers are registered for the event type
 	Emit(event any)
-	// EmitAsync emits an event asynchronously where all handlers are invoked in their own goroutine
+
+	// EmitConcurrent emits an event concurrently where all handler functions are invoked in
+	// their own goroutine
 	// non-blocking unless the max concurrency limit is reached
 	// panics if no handlers are registered for the event type
-	EmitAsync(event any)
-	// EmitSync emits an event synchronously where handlers are invoked sequentially
+	EmitConcurrent(event any)
+
+	// EmitSync emits an event synchronously where handler functions are invoked sequentially
 	// blocking until all handlers are done
 	// panics if no handlers are registered for the event type
 	EmitSync(event any)
-	// Handle registers a handler for the given event type
+}
+
+// Handler is an interface for handling events
+type Handler interface {
+	// Handle registers a handler function for the given event type
 	// panics if the event type is not a named struct or pointer to a named struct
-	// panics if the handler is nil
-	Handle(event any, handler Handler)
+	// panics if the fn is nil
+	Handle(event any, fn HandlerFunc)
+}
+
+// Bus is the interface for an event bus
+type Bus interface {
+	Emitter
+	Handler
 }
 
 // instance is the singleton default bus instance
@@ -62,7 +75,7 @@ func Default() Bus {
 	return b
 }
 
-// Emit emits an event asynchronously on the default bus
+// Emit emits an event where handler functions are invoked sequentially in a single goroutine
 // non-blocking unless the max concurrency limit is reached
 // panics if no handlers are registered for the event type
 func Emit(event any) {
@@ -76,20 +89,20 @@ func EmitSync(event any) {
 	Default().EmitSync(event)
 }
 
-// Handle registers a handler for the given event type on the provided bus
-func Handle[T any](bus Bus, handler func(event T)) {
-	if bus == nil {
-		panic("relay: bus cannot be nil")
+// Handle registers a handler func for the given event type on the provided handler
+func Handle[T any](h Handler, fn func(event T)) {
+	if h == nil {
+		panic("relay: handler must not be nil")
 	}
-	e, h := NewHandler(handler)
-	bus.Handle(e, h)
+	e, f := NewHandlerFunc(fn)
+	h.Handle(e, f)
 }
 
-// On registers a handler for the given event type on the default bus
+// On registers a handler function for the default bus
 // panics if the event type is not a named struct or pointer to a named struct
-// panics if the handler is nil
-func On[T any](handler func(event T)) {
-	Default().Handle(NewHandler(handler))
+// panics if the fn is nil
+func On[T any](fn func(event T)) {
+	Default().Handle(NewHandlerFunc(fn))
 }
 
 // SetDefault sets the default bus instance

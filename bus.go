@@ -6,17 +6,17 @@ import (
 	"sync"
 )
 
-// Handler is a function that processes an event
+// HandlerFunc is a function that processes an event
 // event type must be a named struct or pointer to a named struct
 // a struct vs a pointer to a struct are considered different types
-type Handler func(event any)
+type HandlerFunc func(event any)
 
-// NewHandler creates a Handler for the given function
+// NewHandlerFunc creates a Handler for the given function
 // the function must accept a single argument of type T
 // T must be a named struct or pointer to a named struct
 // a struct vs a pointer to a struct are considered different types
 // panics if the function does not match the expected signature
-func NewHandler[T any](fn func(event T)) (T, Handler) {
+func NewHandlerFunc[T any](fn func(event T)) (T, HandlerFunc) {
 	if fn == nil {
 		panic("relay: handler function must not be nil")
 	}
@@ -32,16 +32,16 @@ func NewHandler[T any](fn func(event T)) (T, Handler) {
 	}
 }
 
-// Config is the configuration for a EventBus
+// Config is the configuration for a bus
 type Config struct {
 	MaxConcurrentHandlers  int  // max number of handlers to run concurrently, defaults to 4
 	UseFullyQualifiedNames bool // use fully qualified names for event type keys, defaults to false
 }
 
-// EventBus is the event EventBus
+// EventBus is an implementation of the Bus interface
 type EventBus struct {
 	config   Config
-	handlers map[string][]Handler
+	handlers map[string][]HandlerFunc
 	mu       sync.RWMutex
 	sem      chan struct{}
 }
@@ -56,15 +56,15 @@ func New(config ...Config) *EventBus {
 	cfg = makeConfig(cfg)
 	return &EventBus{
 		config:   cfg,
-		handlers: map[string][]Handler{},
+		handlers: map[string][]HandlerFunc{},
 		sem:      make(chan struct{}, cfg.MaxConcurrentHandlers),
 	}
 }
 
 // Cancel removes a previously registered handler
 // if the handler is not found, does nothing
-func (b *EventBus) Cancel(handler Handler) {
-	id := reflect.ValueOf(handler).Pointer()
+func (b *EventBus) Cancel(fn HandlerFunc) {
+	id := reflect.ValueOf(fn).Pointer()
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -84,14 +84,14 @@ func (b *EventBus) Cancel(handler Handler) {
 	}
 }
 
-// Emit emits an event where handlers are invoked sequentially in a single goroutine
+// Emit emits an event where handler functions are invoked sequentially in a single goroutine
 // non-blocking unless the max concurrency limit is reached
 // panics if no handlers are registered for the event type
 func (b *EventBus) Emit(event any) {
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 
 	b.mu.RLock()
-	handlers := append([]Handler{}, b.handlers[k]...)
+	handlers := append([]HandlerFunc{}, b.handlers[k]...)
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
@@ -107,14 +107,15 @@ func (b *EventBus) Emit(event any) {
 	}()
 }
 
-// EmitAsync emits an event asynchronously where all handlers are invoked in their own goroutine
+// EmitConcurrent emits an event concurrently where all handler functions are invoked in
+// their own goroutine
 // non-blocking unless the max concurrency limit is reached
 // panics if no handlers are registered for the event type
-func (b *EventBus) EmitAsync(event any) {
+func (b *EventBus) EmitConcurrent(event any) {
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 
 	b.mu.RLock()
-	handlers := append([]Handler{}, b.handlers[k]...)
+	handlers := append([]HandlerFunc{}, b.handlers[k]...)
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
@@ -123,22 +124,22 @@ func (b *EventBus) EmitAsync(event any) {
 
 	for _, h := range handlers {
 		b.sem <- struct{}{} // acquire, block if maxConcurrentHandlers reached
-		// async emit
-		go func(h Handler) {
+		// concurrent emit
+		go func(fn HandlerFunc) {
 			defer func() { <-b.sem }()
-			h(event)
+			fn(event)
 		}(h)
 	}
 }
 
-// EmitSync emits an event synchronously where handlers are invoked sequentially
+// EmitSync emits an event synchronously where handler functions are invoked sequentially
 // blocking until all handlers are done
 // panics if no handlers are registered for the event type
 func (b *EventBus) EmitSync(event any) {
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 
 	b.mu.RLock()
-	handlers := append([]Handler{}, b.handlers[k]...)
+	handlers := append([]HandlerFunc{}, b.handlers[k]...)
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
@@ -152,29 +153,29 @@ func (b *EventBus) EmitSync(event any) {
 
 // Handle registers a handler for the given event type
 // panics if the event type is not a named struct or pointer to a named struct
-// panics if the handler is nil
-func (b *EventBus) Handle(event any, handler Handler) {
+// panics if the fn is nil
+func (b *EventBus) Handle(event any, fn HandlerFunc) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if handler == nil {
-		panic("relay: handler must not be nil")
+	if fn == nil {
+		panic("relay: handler function must not be nil")
 	}
 	k := makeTypeKey(event, b.config.UseFullyQualifiedNames)
 	if _, ok := b.handlers[k]; !ok {
-		b.handlers[k] = []Handler{}
+		b.handlers[k] = []HandlerFunc{}
 	}
-	b.handlers[k] = append(b.handlers[k], handler)
+	b.handlers[k] = append(b.handlers[k], fn)
 }
 
 // Handlers returns a copy of the map of registered handlers
-func (b *EventBus) Handlers() map[string][]Handler {
+func (b *EventBus) Handlers() map[string][]HandlerFunc {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	m := make(map[string][]Handler, len(b.handlers))
+	m := make(map[string][]HandlerFunc, len(b.handlers))
 	for k, v := range b.handlers {
-		m[k] = append([]Handler{}, v...)
+		m[k] = append([]HandlerFunc{}, v...)
 	}
 	return m
 }
