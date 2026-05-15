@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -10,23 +11,26 @@ import (
 	"time"
 )
 
-type testEvent struct {
+type busTestEvent struct {
 	cancel context.CancelFunc
 }
 
 func TestNewHandlerFunc(t *testing.T) {
-	type testEvent struct{ name string }
-	v, h := NewHandlerFunc(func(event testEvent) {
+	t.Parallel()
+
+	type localEvent struct{ name string }
+	v, h := NewHandlerFunc(func(event localEvent) {
 		if event.name != "test" {
 			t.Fatalf("expected event 'test', got '%s'", event.name)
 		}
 	})
-	if reflect.TypeOf(v).Kind() != reflect.TypeOf(testEvent{}).Kind() {
-		t.Fatalf("expected type 'testEvent', got '%T'", v)
+
+	if reflect.TypeOf(v).Kind() != reflect.TypeOf(localEvent{}).Kind() {
+		t.Fatalf("expected type 'localEvent', got '%T'", v)
 	}
 
 	defer func() {
-		want := "relay: handler expected event of type 'relay.testEvent', got 'int'"
+		want := "relay: handler expected event of type 'relay.localEvent', got 'int'"
 		if r := recover(); r != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
@@ -35,8 +39,10 @@ func TestNewHandlerFunc(t *testing.T) {
 	t.Fatal("expected panic, got none")
 }
 
-func TestNew(t *testing.T) {
-	b := New()
+func TestNewBus(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
 	if b == nil {
 		t.Fatal("expected bus, got nil")
 	}
@@ -48,94 +54,59 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestBus_Cancel(t *testing.T) {
-	b := New()
-	_, h1 := NewHandlerFunc(func(e testEvent) {})
-	_, h2 := NewHandlerFunc(func(e testEvent) {})
-	_, h3 := NewHandlerFunc(func(e testEvent) {})
-	b.Handle(testEvent{}, h1)
-	b.Handle(testEvent{}, h2)
-	b.Handle(testEvent{}, h3)
-	k := makeTypeKey(testEvent{}, b.config.UseFullyQualifiedNames)
+func TestEventBusCancel(t *testing.T) {
+	t.Parallel()
 
-	type testEvent2 struct{}
-	_, h4 := NewHandlerFunc(func(e testEvent2) {})
-	b.Handle(testEvent2{}, h4)
-	k2 := makeTypeKey(testEvent2{}, b.config.UseFullyQualifiedNames)
+	b := NewBus()
+	_, h1 := NewHandlerFunc(func(e busTestEvent) {})
+	_, h2 := NewHandlerFunc(func(e busTestEvent) {})
+	_, h3 := NewHandlerFunc(func(e busTestEvent) {})
 
-	if len(b.handlers) != 2 {
-		t.Fatalf("expected 2 handlers, got %d", len(b.handlers))
+	if err := b.Handle(busTestEvent{}, h1); err != nil {
+		t.Fatalf("handle h1 failed: %v", err)
 	}
+	if err := b.Handle(busTestEvent{}, h2); err != nil {
+		t.Fatalf("handle h2 failed: %v", err)
+	}
+	if err := b.Handle(busTestEvent{}, h3); err != nil {
+		t.Fatalf("handle h3 failed: %v", err)
+	}
+	k, err := resolveEventKey(busTestEvent{}, b.opts.UseFullyQualifiedNames)
+	if err != nil {
+		t.Fatalf("resolve key failed: %v", err)
+	}
+
+	type busTestEvent2 struct{}
+	_, h4 := NewHandlerFunc(func(e busTestEvent2) {})
+	if err := b.Handle(busTestEvent2{}, h4); err != nil {
+		t.Fatalf("handle h4 failed: %v", err)
+	}
+	k2, err := resolveEventKey(busTestEvent2{}, b.opts.UseFullyQualifiedNames)
+	if err != nil {
+		t.Fatalf("resolve key2 failed: %v", err)
+	}
+
 	if len(b.handlers[k]) != 3 {
 		t.Fatalf("expected 3 handlers, got %d", len(b.handlers[k]))
 	}
-	if b.handlers[k][0] == nil || b.handlers[k][1] == nil || b.handlers[k][2] == nil {
-		t.Fatal("expected non-nil handlers")
-	}
-	if reflect.ValueOf(b.handlers[k][0]).Pointer() != reflect.ValueOf(h1).Pointer() {
-		t.Fatal("expected h1 as first handler")
-	}
-	if reflect.ValueOf(b.handlers[k][1]).Pointer() != reflect.ValueOf(h2).Pointer() {
-		t.Fatal("expected h2 as second handler")
-	}
-	if reflect.ValueOf(b.handlers[k][2]).Pointer() != reflect.ValueOf(h3).Pointer() {
-		t.Fatal("expected h3 as third handler")
-	}
-
 	if len(b.handlers[k2]) != 1 {
 		t.Fatalf("expected 1 handler, got %d", len(b.handlers[k2]))
-	}
-	if b.handlers[k2][0] == nil {
-		t.Fatal("expected non-nil handler")
-	}
-	if reflect.ValueOf(b.handlers[k2][0]).Pointer() != reflect.ValueOf(h4).Pointer() {
-		t.Fatal("expected h4 as handler")
 	}
 
 	b.Cancel(h2)
-	if len(b.handlers) != 2 {
-		t.Fatalf("expected 2 handlers, got %d", len(b.handlers))
-	}
 	if len(b.handlers[k]) != 2 {
 		t.Fatalf("expected 2 handlers, got %d", len(b.handlers[k]))
-	}
-	if b.handlers[k][0] == nil || b.handlers[k][1] == nil {
-		t.Fatal("expected non-nil handlers")
 	}
 	if reflect.ValueOf(b.handlers[k][0]).Pointer() != reflect.ValueOf(h1).Pointer() {
 		t.Fatal("expected h1 as first handler")
 	}
 	if reflect.ValueOf(b.handlers[k][1]).Pointer() != reflect.ValueOf(h3).Pointer() {
 		t.Fatal("expected h3 as second handler")
-	}
-	if len(b.handlers[k2]) != 1 {
-		t.Fatalf("expected 1 handler, got %d", len(b.handlers[k2]))
-	}
-	if b.handlers[k2][0] == nil {
-		t.Fatal("expected non-nil handler")
-	}
-	if reflect.ValueOf(b.handlers[k2][0]).Pointer() != reflect.ValueOf(h4).Pointer() {
-		t.Fatal("expected h4 as handler")
 	}
 
 	b.Cancel(h4)
-	if len(b.handlers) != 1 {
-		t.Fatalf("expected 1 handler, got %d", len(b.handlers))
-	}
-	if len(b.handlers[k]) != 2 {
-		t.Fatalf("expected 2 handlers, got %d", len(b.handlers[k]))
-	}
-	if b.handlers[k][0] == nil || b.handlers[k][1] == nil {
-		t.Fatal("expected non-nil handlers")
-	}
-	if reflect.ValueOf(b.handlers[k][0]).Pointer() != reflect.ValueOf(h1).Pointer() {
-		t.Fatal("expected h1 as first handler")
-	}
-	if reflect.ValueOf(b.handlers[k][1]).Pointer() != reflect.ValueOf(h3).Pointer() {
-		t.Fatal("expected h3 as second handler")
-	}
 	if _, ok := b.handlers[k2]; ok {
-		t.Fatalf("expected no handlers, got %d", len(b.handlers[k2]))
+		t.Fatalf("expected no handlers for %q", k2)
 	}
 
 	b.Cancel(h1)
@@ -145,385 +116,487 @@ func TestBus_Cancel(t *testing.T) {
 	}
 }
 
-func TestBus_Emit(t *testing.T) {
-	b := New()
+func TestEventBusEmit(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
-	h := func(e testEvent) {
+	_, hf := NewHandlerFunc(func(e busTestEvent) {
 		n.Add(1)
 		if n.Load() == 3 {
 			e.cancel()
 		}
+	})
+	if err := b.Handle(busTestEvent{}, hf); err != nil {
+		t.Fatalf("handle failed: %v", err)
 	}
-	b.Handle(NewHandlerFunc(h))
-	b.Emit(testEvent{cancel: cancel})
-	b.Emit(testEvent{cancel: cancel})
-	b.Emit(testEvent{cancel: cancel})
+
+	b.Emit(busTestEvent{cancel: cancel})
+	b.Emit(busTestEvent{cancel: cancel})
+	b.Emit(busTestEvent{cancel: cancel})
+
 	<-ctx.Done()
 	if n.Load() != 3 {
 		t.Fatalf("expected 3 events, got %d", n.Load())
 	}
 }
 
-func TestBus_Emit_maxHandlers(t *testing.T) {
-	b := New(Config{MaxConcurrentHandlers: 1})
-	b.sem <- struct{}{} // acquire
+func TestEventBusEmitMaxHandlers(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus(BusOptions{MaxConcurrentHandlers: 1})
+	b.sem <- struct{}{}
+
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
-	h := func(e testEvent) {
+	_, hf := NewHandlerFunc(func(e busTestEvent) {
 		n.Add(1)
 		if n.Load() == 3 {
 			e.cancel()
 		}
+	})
+	if err := b.Handle(busTestEvent{}, hf); err != nil {
+		t.Fatalf("handle failed: %v", err)
 	}
-	b.Handle(NewHandlerFunc(h))
+
 	go func() {
-		b.Emit(testEvent{cancel: cancel})
-		b.Emit(testEvent{cancel: cancel})
-		b.Emit(testEvent{cancel: cancel})
+		b.Emit(busTestEvent{cancel: cancel})
+		b.Emit(busTestEvent{cancel: cancel})
+		b.Emit(busTestEvent{cancel: cancel})
 	}()
+
 	time.Sleep(time.Millisecond)
 	if n.Load() != 0 {
 		t.Fatalf("expected 0 events, got %d", n.Load())
 	}
-	<-b.sem // release
+	<-b.sem
 	<-ctx.Done()
 	if n.Load() != 3 {
 		t.Fatalf("expected 3 events, got %d", n.Load())
 	}
 }
 
-func TestBus_Emit_noHandler(t *testing.T) {
-	b := New(Config{UseFullyQualifiedNames: true})
+func TestEventBusEmitNoHandler(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
 	defer func() {
-		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
-		if r := recover(); r != want {
+		want := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
+		if r := recover(); r == nil || r.(error).Error() != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	b.Emit(testEvent{})
+	b.Emit(busTestEvent{})
 	t.Fatal("expected panic, got none")
 }
 
-func TestBus_Emit_multipleHandlers(t *testing.T) {
-	b := New()
+func TestEventBusEmitInvalidEventPanics(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok {
+			t.Fatalf("expected panic error, got %T", r)
+		}
+		if err.Error() != "relay: invalid event: event must not be nil" {
+			t.Fatalf("expected panic 'relay: invalid event: event must not be nil', got %v", err)
+		}
+	}()
+
+	b.Emit(nil)
+}
+
+func TestEventBusEmitMultipleHandlers(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
-	h1 := func(e testEvent) {
+
+	_, h1 := NewHandlerFunc(func(e busTestEvent) {
 		n.Add(1)
 		if n.Load() == 9 {
 			e.cancel()
 		}
-	}
-	h2 := func(e testEvent) {
+	})
+	_, h2 := NewHandlerFunc(func(e busTestEvent) {
 		n.Add(2)
 		if n.Load() == 9 {
 			e.cancel()
 		}
-	}
-	b.Handle(NewHandlerFunc(h1))
-	b.Handle(NewHandlerFunc(h2))
-	b.Emit(testEvent{cancel: cancel})
-	b.Emit(testEvent{cancel: cancel})
-	b.Emit(testEvent{cancel: cancel})
+	})
+
+	_ = b.Handle(busTestEvent{}, h1)
+	_ = b.Handle(busTestEvent{}, h2)
+
+	b.Emit(busTestEvent{cancel: cancel})
+	b.Emit(busTestEvent{cancel: cancel})
+	b.Emit(busTestEvent{cancel: cancel})
+
 	<-ctx.Done()
 	if n.Load() != 9 {
 		t.Fatalf("expected 9 events, got %d", n.Load())
 	}
 }
 
-func TestBus_EmitConcurrent(t *testing.T) {
-	b := New()
+func TestEventBusEmitConcurrent(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
-	h := func(e testEvent) {
+	_, hf := NewHandlerFunc(func(e busTestEvent) {
 		n.Add(1)
 		if n.Load() == 3 {
 			e.cancel()
 		}
-	}
-	b.Handle(NewHandlerFunc(h))
-	b.EmitConcurrent(testEvent{cancel: cancel})
-	b.EmitConcurrent(testEvent{cancel: cancel})
-	b.EmitConcurrent(testEvent{cancel: cancel})
+	})
+	_ = b.Handle(busTestEvent{}, hf)
+
+	b.EmitConcurrent(busTestEvent{cancel: cancel})
+	b.EmitConcurrent(busTestEvent{cancel: cancel})
+	b.EmitConcurrent(busTestEvent{cancel: cancel})
+
 	<-ctx.Done()
 	if n.Load() != 3 {
 		t.Fatalf("expected 3 events, got %d", n.Load())
 	}
 }
 
-func TestBus_EmitConcurrent_maxHandlers(t *testing.T) {
-	b := New(Config{MaxConcurrentHandlers: 1})
-	b.sem <- struct{}{} // acquire
+func TestEventBusEmitConcurrentMaxHandlers(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus(BusOptions{MaxConcurrentHandlers: 1})
+	b.sem <- struct{}{}
+
 	var n atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
-	h := func(e testEvent) {
+	_, hf := NewHandlerFunc(func(e busTestEvent) {
 		n.Add(1)
 		if n.Load() == 3 {
 			e.cancel()
 		}
-	}
-	b.Handle(NewHandlerFunc(h))
+	})
+	_ = b.Handle(busTestEvent{}, hf)
+
 	go func() {
-		b.EmitConcurrent(testEvent{cancel: cancel})
-		b.EmitConcurrent(testEvent{cancel: cancel})
-		b.EmitConcurrent(testEvent{cancel: cancel})
+		b.EmitConcurrent(busTestEvent{cancel: cancel})
+		b.EmitConcurrent(busTestEvent{cancel: cancel})
+		b.EmitConcurrent(busTestEvent{cancel: cancel})
 	}()
+
 	time.Sleep(time.Millisecond)
 	if n.Load() != 0 {
 		t.Fatalf("expected 0 events, got %d", n.Load())
 	}
-	<-b.sem // release
+	<-b.sem
 	<-ctx.Done()
 	if n.Load() != 3 {
 		t.Fatalf("expected 3 events, got %d", n.Load())
 	}
 }
 
-func TestBus_EmitConcurrent_noHandler(t *testing.T) {
-	b := New(Config{UseFullyQualifiedNames: true})
+func TestEventBusEmitConcurrentNoHandler(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
 	defer func() {
-		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
-		if r := recover(); r != want {
+		want := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
+		if r := recover(); r == nil || r.(error).Error() != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	b.EmitConcurrent(testEvent{})
+	b.EmitConcurrent(busTestEvent{})
 	t.Fatal("expected panic, got none")
 }
 
-func TestBus_EmitConcurrent_multipleHandlers(t *testing.T) {
-	b := New()
-	var n atomic.Int32
-	ctx, cancel := context.WithCancel(context.Background())
-	h1 := func(e testEvent) {
-		n.Add(1)
-		if n.Load() == 9 {
-			e.cancel()
+func TestEventBusEmitConcurrentInvalidEventPanics(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic, got none")
 		}
-	}
-	h2 := func(e testEvent) {
-		n.Add(2)
-		if n.Load() == 9 {
-			e.cancel()
+		err, ok := r.(error)
+		if !ok {
+			t.Fatalf("expected panic error, got %T", r)
 		}
-	}
-	b.Handle(NewHandlerFunc(h1))
-	b.Handle(NewHandlerFunc(h2))
-	b.EmitConcurrent(testEvent{cancel: cancel})
-	b.EmitConcurrent(testEvent{cancel: cancel})
-	b.EmitConcurrent(testEvent{cancel: cancel})
-	<-ctx.Done()
-	if n.Load() != 9 {
-		t.Fatalf("expected 9 events, got %d", n.Load())
-	}
+		if err.Error() != "relay: invalid event: event must not be nil" {
+			t.Fatalf("expected panic 'relay: invalid event: event must not be nil', got %v", err)
+		}
+	}()
+
+	b.EmitConcurrent(nil)
 }
 
-func TestBus_EmitSync(t *testing.T) {
-	b := New()
+func TestEventBusEmitSync(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
 	var n atomic.Int32
-	h := func(e testEvent) {
-		n.Add(1)
-	}
-	b.Handle(NewHandlerFunc(h))
-	b.EmitSync(testEvent{})
-	b.EmitSync(testEvent{})
-	b.EmitSync(testEvent{})
+	_, hf := NewHandlerFunc(func(e busTestEvent) { n.Add(1) })
+	_ = b.Handle(busTestEvent{}, hf)
+
+	b.EmitSync(busTestEvent{})
+	b.EmitSync(busTestEvent{})
+	b.EmitSync(busTestEvent{})
+
 	if n.Load() != 3 {
 		t.Fatalf("expected 3 events, got %d", n.Load())
 	}
 }
 
-func TestBus_EmitSync_noHandler(t *testing.T) {
-	b := New(Config{UseFullyQualifiedNames: true})
+func TestEventBusEmitSyncNoHandler(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
 	defer func() {
-		want := "relay: no handlers for event type 'github.com/shayanderson/relay.testEvent'"
-		if r := recover(); r != want {
+		want := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
+		if r := recover(); r == nil || r.(error).Error() != want {
 			t.Fatalf("expected panic '%s', got '%v'", want, r)
 		}
 	}()
-	b.EmitSync(testEvent{})
+	b.EmitSync(busTestEvent{})
 	t.Fatal("expected panic, got none")
 }
 
-func TestBus_EmitSync_multipleHandlers(t *testing.T) {
-	b := New()
-	var n atomic.Int32
-	h1 := func(e testEvent) {
-		n.Add(1)
+func TestEventBusEmitSyncInvalidEventPanics(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok {
+			t.Fatalf("expected panic error, got %T", r)
+		}
+		if err.Error() != "relay: invalid event: event must not be nil" {
+			t.Fatalf("expected panic 'relay: invalid event: event must not be nil', got %v", err)
+		}
+	}()
+
+	b.EmitSync(nil)
+}
+
+func TestEventBusHandleNilHandler(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
+	err := b.Handle(busTestEvent{}, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	h2 := func(e testEvent) {
-		n.Add(2)
-	}
-	b.Handle(NewHandlerFunc(h1))
-	b.Handle(NewHandlerFunc(h2))
-	b.EmitSync(testEvent{})
-	b.EmitSync(testEvent{})
-	b.EmitSync(testEvent{})
-	if n.Load() != 9 {
-		t.Fatalf("expected 9 events, got %d", n.Load())
+	if !errors.Is(err, ErrInvalidHandler) {
+		t.Fatalf("expected ErrInvalidHandler, got %v", err)
 	}
 }
 
-func TestBus_Handle_nilHandler(t *testing.T) {
-	b := New()
+func TestEventBusHandlers(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
+	_, h1 := NewHandlerFunc(func(e busTestEvent) {})
+	_, h2 := NewHandlerFunc(func(e busTestEvent) {})
+	_ = b.Handle(busTestEvent{}, h1)
+	_ = b.Handle(busTestEvent{}, h2)
+
+	type busTestEvent2 struct{}
+	_, h3 := NewHandlerFunc(func(e busTestEvent2) {})
+	_ = b.Handle(busTestEvent2{}, h3)
+
+	handlers := b.Handlers()
+	if len(handlers) != 2 {
+		t.Fatalf("expected 2 handler keys, got %d", len(handlers))
+	}
+
+	k1 := "github.com/shayanderson/relay.busTestEvent"
+	k2 := "github.com/shayanderson/relay.busTestEvent2"
+	if len(handlers[k1]) != 2 {
+		t.Fatalf("expected 2 handlers for %q, got %d", k1, len(handlers[k1]))
+	}
+	if len(handlers[k2]) != 1 {
+		t.Fatalf("expected 1 handler for %q, got %d", k2, len(handlers[k2]))
+	}
+
+	handlers[k1] = nil
+	if got := len(b.Handlers()[k1]); got != 2 {
+		t.Fatalf("expected original handlers unchanged, got %d", got)
+	}
+}
+
+func TestSetDefaultBusOptions(t *testing.T) {
+	t.Parallel()
+
+	o := setDefaultBusOptions(BusOptions{})
+	if o.MaxConcurrentHandlers != busDefaultMaxConcurrentHandlers {
+		t.Fatalf("expected default max handlers %d, got %d", busDefaultMaxConcurrentHandlers, o.MaxConcurrentHandlers)
+	}
+
+	o = setDefaultBusOptions(BusOptions{MaxConcurrentHandlers: -1})
+	if o.MaxConcurrentHandlers != busDefaultMaxConcurrentHandlers {
+		t.Fatalf("expected default max handlers %d, got %d", busDefaultMaxConcurrentHandlers, o.MaxConcurrentHandlers)
+	}
+
+	o = setDefaultBusOptions(BusOptions{MaxConcurrentHandlers: 8})
+	if o.MaxConcurrentHandlers != 8 {
+		t.Fatalf("expected 8, got %d", o.MaxConcurrentHandlers)
+	}
+}
+
+func TestHandleHelper(t *testing.T) {
+	t.Parallel()
+
+	err := Handle[busTestEvent](nil, func(Event) {})
+	if err == nil {
+		t.Fatal("expected error for nil handler")
+	}
+	if !errors.Is(err, ErrInvalidHandler) {
+		t.Fatalf("expected ErrInvalidHandler, got %v", err)
+	}
+}
+
+func TestNewHandlerFuncNilPanics(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		want := "relay: handler function must not be nil"
 		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
+			t.Fatalf("expected panic %q, got %v", want, r)
 		}
 	}()
-	b.Handle(testEvent{}, nil)
+
+	NewHandlerFunc[busTestEvent](nil)
 	t.Fatal("expected panic, got none")
 }
 
-func TestBus_Handlers(t *testing.T) {
-	b := New(Config{UseFullyQualifiedNames: true})
-	h1 := func(e testEvent) {}
-	h2 := func(e testEvent) {}
-	b.Handle(NewHandlerFunc(h1))
-	b.Handle(NewHandlerFunc(h2))
-	type testEvent2 struct{}
-	h3 := func(e testEvent2) {}
-	b.Handle(NewHandlerFunc(h3))
-	handlers := b.Handlers()
-	if len(handlers) != 2 {
-		t.Fatalf("expected 2 handlers, got %d", len(handlers))
-	}
-	t1 := "github.com/shayanderson/relay.testEvent"
-	t2 := "github.com/shayanderson/relay.testEvent2"
-	h1s, ok := handlers[t1]
-	if !ok {
-		t.Fatalf("expected handlers for key '%s', got none", t1)
-	}
-	if len(h1s) != 2 {
-		t.Fatalf("expected 2 handlers for key '%s', got %d", t1, len(h1s))
-	}
-	h2s, ok := handlers[t2]
-	if !ok {
-		t.Fatalf("expected handlers for key '%s', got none", t2)
-	}
-	if len(h2s) != 1 {
-		t.Fatalf("expected 1 handler for key '%s', got %d", t2, len(h2s))
+func TestEventBusHandleInvalidEvent(t *testing.T) {
+	t.Parallel()
+
+	b := NewBus()
+	err := b.Handle(nil, func(Event) {})
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestMakeConfig(t *testing.T) {
-	c := makeConfig(Config{})
-	if c.MaxConcurrentHandlers != 4 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 4, got %d", c.MaxConcurrentHandlers)
-	}
-	if c.UseFullyQualifiedNames {
-		t.Fatal("expected UseFullyQualifiedNames to be false, got true")
-	}
+func TestEventBusEmitErrorHandlerPaths(t *testing.T) {
+	t.Parallel()
 
-	c = makeConfig(Config{MaxConcurrentHandlers: 0})
-	if c.MaxConcurrentHandlers != 4 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 4, got %d", c.MaxConcurrentHandlers)
-	}
+	var got []error
+	b := NewBus(BusOptions{ErrorHandler: func(err error) { got = append(got, err) }})
 
-	c = makeConfig(Config{MaxConcurrentHandlers: -1})
-	if c.MaxConcurrentHandlers != 4 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 4, got %d", c.MaxConcurrentHandlers)
-	}
+	b.Emit(nil)
+	b.Emit(busTestEvent{})
 
-	c = makeConfig(Config{MaxConcurrentHandlers: 8})
-	if c.MaxConcurrentHandlers != 8 {
-		t.Fatalf("expected MaxConcurrentHandlers to be 8, got %d", c.MaxConcurrentHandlers)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 errors, got %d", len(got))
 	}
-
-	c = makeConfig(Config{UseFullyQualifiedNames: true})
-	if !c.UseFullyQualifiedNames {
-		t.Fatal("expected UseFullyQualifiedNames to be true, got false")
+	if got[0] == nil {
+		t.Fatal("expected invalid event error")
+	}
+	if !errors.Is(got[1], ErrNoHandlers) {
+		t.Fatalf("expected ErrNoHandlers, got %v", got[1])
 	}
 }
 
-func TestMakeTypeKey(t *testing.T) {
-	k := makeTypeKey(testEvent{}, true)
-	want := "github.com/shayanderson/relay.testEvent"
-	if k != want {
-		t.Fatalf("expected type key '%s', got '%s'", want, k)
-	}
+func TestEventBusEmitConcurrentErrorHandlerPaths(t *testing.T) {
+	t.Parallel()
 
-	k = makeTypeKey(&testEvent{}, true)
-	want = "*github.com/shayanderson/relay.testEvent"
-	if k != want {
-		t.Fatalf("expected type key '%s', got '%s'", want, k)
-	}
+	var got []error
+	b := NewBus(BusOptions{ErrorHandler: func(err error) { got = append(got, err) }})
 
-	k = makeTypeKey(testEvent{}, false)
-	want = "relay.testEvent"
-	if k != want {
-		t.Fatalf("expected type key '%s', got '%s'", want, k)
-	}
+	b.EmitConcurrent(nil)
+	b.EmitConcurrent(busTestEvent{})
 
-	k = makeTypeKey(&testEvent{}, false)
-	want = "*relay.testEvent"
-	if k != want {
-		t.Fatalf("expected type key '%s', got '%s'", want, k)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 errors, got %d", len(got))
+	}
+	if got[0] == nil {
+		t.Fatal("expected invalid event error")
+	}
+	if !errors.Is(got[1], ErrNoHandlers) {
+		t.Fatalf("expected ErrNoHandlers, got %v", got[1])
 	}
 }
 
-func TestMakeTypeKey_nil(t *testing.T) {
-	defer func() {
-		want := "relay: event must not be nil"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	makeTypeKey(nil, true)
-	t.Fatal("expected panic, got none")
+func TestEventBusEmitSyncErrorHandlerPaths(t *testing.T) {
+	t.Parallel()
+
+	var got []error
+	b := NewBus(BusOptions{ErrorHandler: func(err error) { got = append(got, err) }})
+
+	b.EmitSync(nil)
+	b.EmitSync(busTestEvent{})
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 errors, got %d", len(got))
+	}
+	if got[0] == nil {
+		t.Fatal("expected invalid event error")
+	}
+	if !errors.Is(got[1], ErrNoHandlers) {
+		t.Fatalf("expected ErrNoHandlers, got %v", got[1])
+	}
 }
 
-func TestMakeTypeKey_nonStruct(t *testing.T) {
-	defer func() {
-		want := "relay: event must be a struct or pointer to struct, got 'int'"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	makeTypeKey(123, true)
-	t.Fatal("expected panic, got none")
+type handleHelperStub struct {
+	called bool
+	e      Event
+	fn     HandlerFunc
+	err    error
 }
 
-func TestMakeTypeKey_nonPointerStruct(t *testing.T) {
-	defer func() {
-		want := "relay: event must be a struct or pointer to struct, got pointer to 'int'"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	makeTypeKey(new(int), true)
-	t.Fatal("expected panic, got none")
+func (s *handleHelperStub) Handle(e Event, fn HandlerFunc) error {
+	s.called = true
+	s.e = e
+	s.fn = fn
+	return s.err
 }
 
-func TestMakeTypeKey_nonNamedStruct(t *testing.T) {
-	defer func() {
-		want := "relay: event must be a named struct or pointer to named struct, got 'struct {}'"
-		if r := recover(); r != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	makeTypeKey(struct{}{}, true)
-	t.Fatal("expected panic, got none")
+func TestHandleHelperDelegatesToHandler(t *testing.T) {
+	t.Parallel()
+
+	stub := &handleHelperStub{}
+	err := Handle[busTestEvent](stub, func(e Event) {})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !stub.called {
+		t.Fatal("expected underlying handler to be called")
+	}
+	if stub.fn == nil {
+		t.Fatal("expected wrapped handler function to be non-nil")
+	}
 }
 
 func BenchmarkEmit(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
-			bus := New()
+			bus := NewBus()
 			wg := sync.WaitGroup{}
 			var c atomic.Int32
 			for range n {
-				bus.Handle(NewHandlerFunc(func(e testEvent) {
+				_, hf := NewHandlerFunc(func(e busTestEvent) {
 					defer wg.Done()
 					c.Add(1)
-				}))
+				})
+				_ = bus.Handle(busTestEvent{}, hf)
 			}
 			b.ResetTimer()
 			for b.Loop() {
 				wg.Add(n)
-				bus.Emit(testEvent{})
+				bus.Emit(busTestEvent{})
 			}
 			b.StopTimer()
 			wg.Wait()
@@ -537,19 +610,20 @@ func BenchmarkEmit(b *testing.B) {
 func BenchmarkEmitConcurrent(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
-			bus := New()
+			bus := NewBus()
 			wg := sync.WaitGroup{}
 			var c atomic.Int32
 			for range n {
-				bus.Handle(NewHandlerFunc(func(e testEvent) {
+				_, hf := NewHandlerFunc(func(e busTestEvent) {
 					defer wg.Done()
 					c.Add(1)
-				}))
+				})
+				_ = bus.Handle(busTestEvent{}, hf)
 			}
 			b.ResetTimer()
 			for b.Loop() {
 				wg.Add(n)
-				bus.EmitConcurrent(testEvent{})
+				bus.EmitConcurrent(busTestEvent{})
 			}
 			b.StopTimer()
 			wg.Wait()
@@ -563,16 +637,15 @@ func BenchmarkEmitConcurrent(b *testing.B) {
 func BenchmarkEmitSync(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
-			bus := New()
+			bus := NewBus()
 			var c atomic.Int32
 			for range n {
-				bus.Handle(NewHandlerFunc(func(e testEvent) {
-					c.Add(1)
-				}))
+				_, hf := NewHandlerFunc(func(e busTestEvent) { c.Add(1) })
+				_ = bus.Handle(busTestEvent{}, hf)
 			}
 			b.ResetTimer()
 			for b.Loop() {
-				bus.EmitSync(testEvent{})
+				bus.EmitSync(busTestEvent{})
 			}
 			b.StopTimer()
 			if got, want := c.Load(), int32(b.N*n); got != want {
