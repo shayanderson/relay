@@ -170,10 +170,10 @@ func TestClose_Idempotent(t *testing.T) {
 
 	q := NewQueue()
 	if err := q.Close(); err != nil {
-		t.Fatalf("first close failed: %v", err)
+		t.Fatalf("expected no error on first close, got %v", err)
 	}
-	if err := q.Close(); err != nil {
-		t.Fatalf("second close failed: %v", err)
+	if err := q.Close(); err == nil || !errors.Is(err, ErrQueueClosed) {
+		t.Fatalf("expected ErrQueueClosed on second close, got %v", err)
 	}
 }
 
@@ -298,7 +298,7 @@ func TestSubscribe_NilFunctionNotValidated(t *testing.T) {
 		}
 	}()
 
-	_ = q.Run(context.Background())
+	_ = q.Run(t.Context())
 }
 
 func TestUnsubscribe_InvalidEvent(t *testing.T) {
@@ -450,7 +450,7 @@ func TestPublish_Concurrent(t *testing.T) {
 	total := publishers * perPublisher
 
 	q := NewQueue(QueueOptions{BufferSize: total})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	delivered := make(chan struct{}, total)
@@ -511,7 +511,7 @@ func TestSubscribeUnsubscribePublish_Concurrent(t *testing.T) {
 	t.Parallel()
 
 	q := NewQueue(QueueOptions{BufferSize: 4096})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	runErr := make(chan error, 1)
@@ -579,7 +579,55 @@ func TestSubscribeUnsubscribePublish_Concurrent(t *testing.T) {
 	_ = received.Load()
 }
 
-func TestPublish_AfterClosePanics(t *testing.T) {
+func TestSubscribeUnsubscribePublish_ConcurrentClose(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue(QueueOptions{BufferSize: 4096})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- q.Run(ctx)
+	}()
+
+	n := atomic.Int64{}
+	handler := func(Event) {
+		n.Add(1)
+	}
+	q.Subscribe(queueTestEvent{}, handler)
+
+	go func() {
+		for {
+			err := q.Publish(queueTestEvent{ID: 1})
+			if err != nil && !errors.Is(err, ErrQueueClosed) {
+				t.Errorf("publish expected to fail with ErrQueueClosed, got %v", err)
+				return
+			}
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	if err := q.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	select {
+	case err := <-runErr:
+		if err != nil && !errors.Is(err, ErrNoSubscribers) {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for queue run to stop")
+	}
+
+	if n.Load() == 0 {
+		t.Fatal("expected at least one event to be delivered before close, got 0")
+	}
+}
+
+func TestPublish_AfterCloseError(t *testing.T) {
 	t.Parallel()
 
 	q := NewQueue()
@@ -591,19 +639,21 @@ func TestPublish_AfterClosePanics(t *testing.T) {
 	}
 
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic when publishing to closed queue")
+		if r := recover(); r != nil {
+			t.Fatalf("expected no panic when publishing after close, got %v", r)
 		}
 	}()
 
-	_ = q.Publish(queueTestEvent{ID: 1})
+	if err := q.Publish(queueTestEvent{ID: 1}); err == nil || !errors.Is(err, ErrQueueClosed) {
+		t.Fatalf("expected ErrQueueClosed when publishing after close, got %v", err)
+	}
 }
 
 func BenchmarkPublish(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 100_000} {
 		b.Run("subscribers="+strconv.Itoa(n), func(b *testing.B) {
 			q := NewQueue(QueueOptions{BufferSize: 1024})
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(b.Context())
 			defer cancel()
 
 			runErr := make(chan error, 1)
@@ -661,7 +711,7 @@ func BenchmarkPublishConcurrent(b *testing.B) {
 	for _, workers := range []int{2, 4, 8, 16} {
 		b.Run("workers="+strconv.Itoa(workers), func(b *testing.B) {
 			q := NewQueue(QueueOptions{BufferSize: 1024})
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(b.Context())
 			defer cancel()
 
 			runErr := make(chan error, 1)
@@ -715,7 +765,11 @@ func BenchmarkPublishConcurrent(b *testing.B) {
 			deadline := time.Now().Add(30 * time.Second)
 			for delivered.Load() < want {
 				if time.Now().After(deadline) {
-					b.Fatalf("timed out waiting for deliveries: got %d want %d", delivered.Load(), want)
+					b.Fatalf(
+						"timed out waiting for deliveries: got %d want %d",
+						delivered.Load(),
+						want,
+					)
 				}
 				runtime.Gosched()
 			}

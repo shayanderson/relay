@@ -25,10 +25,6 @@ go get github.com/shayanderson/relay
 
 ```go
 bus := relay.NewBus(relay.BusOptions{ // options are optional
-    // optional error handler for handling errors during event emission, defaults to panic
-    ErrorHandler: func(err error) {
-        slog.Error("event bus error", "err", err)
-    },
     // max number of handlers to run concurrently, defaults to 4
 	MaxConcurrentHandlers:  32,
     // use fully qualified names for event type keys to avoid collisions in large projects
@@ -50,7 +46,10 @@ if err != nil {
 }
 
 // emit a UserCreated event, must be named struct or pointer to named struct
-bus.Emit(UserCreated{Name: "Alice"})
+err := bus.Emit(UserCreated{Name: "Alice"})
+if err != nil {
+    // ...
+}
 // output:
 // new user: Alice
 
@@ -82,9 +81,9 @@ if err != nil {
 
 // emit 3 events
 wg.Add(3)
-b.Emit(testEventCtx{ctx: ctx})
-b.Emit(testEventCtx{ctx: ctx})
-b.Emit(testEventCtx{ctx: ctx})
+_ = b.Emit(testEventCtx{ctx: ctx})
+_ = b.Emit(testEventCtx{ctx: ctx})
+_ = b.Emit(testEventCtx{ctx: ctx})
 cancel() // cancel context to unblock handlers
 wg.Wait() // wait for all handlers to finish
 ```
@@ -107,15 +106,14 @@ type Event any
 type HandlerFunc = func(Event)
 
 type BusOptions struct {
-    ErrorHandler           func(error)
     MaxConcurrentHandlers  int
     UseFullyQualifiedNames bool
 }
 
 type Emitter interface {
-	Emit(Event)
-	EmitConcurrent(Event)
-	EmitSync(Event)
+	Emit(Event) error
+	EmitConcurrent(Event) error
+	EmitSync(Event) error
 }
 
 type Handler interface {
@@ -146,13 +144,13 @@ func (*EventBus) Handlers() map[string][]HandlerFunc
 ### Methods
 
 - `Cancel(fn HandlerFunc)`: Cancels a previously registered handler.
-- `Emit(e Event)`: Emits an event, invoking handlers sequentially in a single goroutine.
+- `Emit(e Event) error`: Emits an event, invoking handlers sequentially in a single goroutine.
   - Event must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
-- `EmitConcurrent(e Event)`: Emits an event on the bus, invoking all handlers concurrently in separate goroutines.
+- `EmitConcurrent(e Event) error`: Emits an event on the bus, invoking all handlers concurrently in separate goroutines.
   - Event must be a named struct or pointer to a named struct.
   - Non-blocking, unless the max concurrency limit is reached, in which case it will block until a handler can be started.
-- `EmitSync(e Event)`: Emits an event on the bus synchronously, handlers are invoked sequentially.
+- `EmitSync(e Event) error`: Emits an event on the bus synchronously, handlers are invoked sequentially.
   - Event must be a named struct or pointer to a named struct.
   - Blocks until all handlers for the event have completed.
 - `Handle(e Event, fn HandlerFunc) error`: Registers a handler for the specified event type.
@@ -162,7 +160,6 @@ func (*EventBus) Handlers() map[string][]HandlerFunc
 
 When creating a new bus, you can customize its behavior using `BusOptions`.
 
-- `ErrorHandler`: Optional callback for handling errors that occur during event emission. If not provided, a panic will occur on errors.
 - `MaxConcurrentHandlers`: Limits the number of event handlers that can run concurrently. Limit is for each bus instance. Default is `4`.
 - `UseFullyQualifiedNames`: If set to `true`, event type keys will include the package path, reducing the risk of type name collisions, e.g. `github.com/you/pkg.UserCreated` instead of just `pkg.UserCreated`. Default is `false`.
 
@@ -266,7 +263,7 @@ func (*EventQueue) Unsubscribe(Event, SubscriberFunc) error
 
 ### Methods
 
-- `Close() error`: Closes the queue. Publishing after close is undefined behavior and will panic.
+- `Close() error`: Closes the queue. After closing, new events cannot be published, but buffered events may still be delivered.
 - `Publish(e Event) error`: Publishes an event to the queue.
   - Event must be a named struct or pointer to a named struct.
 - `Run(ctx context.Context) error`: Starts the event processing loop. Should be run in a separate goroutine. Blocks until the context is canceled or the queue is closed.

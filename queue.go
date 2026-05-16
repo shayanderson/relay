@@ -18,6 +18,8 @@ var (
 	ErrInvalidSubscriber = errors.New("relay: invalid subscriber")
 	// ErrNoSubscribers indicates that there are no subscribers for the event type
 	ErrNoSubscribers = errors.New("relay: no subscribers")
+	// ErrQueueClosed indicates that the queue is closed and cannot accept new events
+	ErrQueueClosed = errors.New("relay: queue is closed")
 	// ErrQueueFull indicates that the internal queue buffer is full
 	ErrQueueFull = errors.New("relay: queue is full")
 )
@@ -86,11 +88,12 @@ func setDefaultQueueOptions(options QueueOptions) QueueOptions {
 
 // EventQueue is an implementation of the Queue interface
 type EventQueue struct {
-	ch        chan resolvedEvent
-	closeOnce sync.Once
-	opts      QueueOptions
-	mu        sync.RWMutex
-	subs      map[string][]SubscriberFunc
+	ch      chan resolvedEvent
+	closed  bool
+	closeMu sync.RWMutex
+	opts    QueueOptions
+	mu      sync.RWMutex
+	subs    map[string][]SubscriberFunc
 }
 
 // NewQueue creates a new EventQueue with the given options
@@ -109,12 +112,19 @@ func NewQueue(options ...QueueOptions) *EventQueue {
 }
 
 // Close closes the event queue and releases any resources
-// after calling Close, the queue will no longer accept new events and any pending events
-// will not be delivered
+// after calling Close, the queue will no longer accept new events, buffered events already
+// queued may still be delivered
+// returns ErrQueueClosed if the queue is already closed
 func (q *EventQueue) Close() error {
-	q.closeOnce.Do(func() {
-		close(q.ch)
-	})
+	q.closeMu.Lock()
+	defer q.closeMu.Unlock()
+
+	if q.closed {
+		return ErrQueueClosed
+	}
+
+	q.closed = true
+	close(q.ch)
 	return nil
 }
 
@@ -122,7 +132,15 @@ func (q *EventQueue) Close() error {
 // returns ErrInvalidEvent if the event is invalid
 // returns ErrNoSubscribers if there are no subscribers for the event type
 // returns ErrQueueFull if the internal queue buffer is full
+// returns ErrQueueClosed if the queue is closed
 func (q *EventQueue) Publish(e Event) error {
+	q.closeMu.RLock()
+	defer q.closeMu.RUnlock()
+
+	if q.closed {
+		return ErrQueueClosed
+	}
+
 	k, err := resolveEventKey(e, q.opts.UseFullyQualifiedNames)
 	if err != nil {
 		return err

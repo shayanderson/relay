@@ -22,26 +22,29 @@ var (
 type Emitter interface {
 	// Emit emits an event where handler functions are invoked sequentially in a single goroutine
 	// non-blocking unless the max concurrency limit is reached
-	// panics if no handlers are registered for the event type
-	Emit(Event)
+	// returns ErrInvalidEvent if the event is invalid
+	// returns ErrNoHandlers if no handlers are registered for the event type
+	Emit(Event) error
 
 	// EmitConcurrent emits an event concurrently where all handler functions are invoked in
 	// their own goroutine
 	// non-blocking unless the max concurrency limit is reached
-	// panics if no handlers are registered for the event type
-	EmitConcurrent(Event)
+	// returns ErrInvalidEvent if the event is invalid
+	// returns ErrNoHandlers if no handlers are registered for the event type
+	EmitConcurrent(Event) error
 
 	// EmitSync emits an event synchronously where handler functions are invoked sequentially
 	// blocking until all handlers are done
-	// panics if no handlers are registered for the event type
-	EmitSync(Event)
+	// returns ErrInvalidEvent if the event is invalid
+	// returns ErrNoHandlers if no handlers are registered for the event type
+	EmitSync(Event) error
 }
 
 // Handler is an interface for handling events
 type Handler interface {
 	// Handle registers a handler function for the given event type
-	// panics if the event type is not a named struct or pointer to a named struct
-	// panics if the fn is nil
+	// returns ErrInvalidHandler if the handler function is invalid
+	// returns ErrInvalidEvent if the event type is invalid
 	Handle(Event, HandlerFunc) error
 }
 
@@ -79,9 +82,8 @@ type Bus interface {
 
 // BusOptions are the options for an event bus
 type BusOptions struct {
-	ErrorHandler           func(error) // optional, will panic if not nil, defaults to nil
-	MaxConcurrentHandlers  int         // max number of handlers to run concurrently, defaults to 4
-	UseFullyQualifiedNames bool        // use fully qualified names for event type keys, defaults to false
+	MaxConcurrentHandlers  int  // max number of handlers to run concurrently, defaults to 4
+	UseFullyQualifiedNames bool // use fully qualified names for event type keys, defaults to false
 }
 
 // setDefaultBusOptions sets the default values for BusOptions
@@ -140,15 +142,12 @@ func (b *EventBus) Cancel(fn HandlerFunc) {
 
 // Emit emits an event where handler functions are invoked sequentially in a single goroutine
 // non-blocking unless the max concurrency limit is reached
-// calls ErrorHandler or panics if no handlers are registered for the event type
-func (b *EventBus) Emit(e Event) {
+// returns ErrInvalidEvent if the event is invalid
+// returns ErrNoHandlers if no handlers are registered for the event type
+func (b *EventBus) Emit(e Event) error {
 	k, err := resolveEventKey(e, b.opts.UseFullyQualifiedNames)
 	if err != nil {
-		if b.opts.ErrorHandler != nil {
-			b.opts.ErrorHandler(err)
-			return
-		}
-		panic(err)
+		return err
 	}
 
 	b.mu.RLock()
@@ -156,12 +155,7 @@ func (b *EventBus) Emit(e Event) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		err = fmt.Errorf("%w: %s", ErrNoHandlers, k)
-		if b.opts.ErrorHandler != nil {
-			b.opts.ErrorHandler(err)
-			return
-		}
-		panic(err)
+		return fmt.Errorf("%w: %s", ErrNoHandlers, k)
 	}
 
 	b.sem <- struct{}{} // acquire, block if maxConcurrentHandlers reached
@@ -171,20 +165,18 @@ func (b *EventBus) Emit(e Event) {
 			h(e)
 		}
 	}()
+	return nil
 }
 
 // EmitConcurrent emits an event concurrently where all handler functions are invoked in
 // their own goroutine
 // non-blocking unless the max concurrency limit is reached
-// calls ErrorHandler or panics if no handlers are registered for the event type
-func (b *EventBus) EmitConcurrent(e Event) {
+// returns ErrInvalidEvent if the event is invalid
+// returns ErrNoHandlers if no handlers are registered for the event type
+func (b *EventBus) EmitConcurrent(e Event) error {
 	k, err := resolveEventKey(e, b.opts.UseFullyQualifiedNames)
 	if err != nil {
-		if b.opts.ErrorHandler != nil {
-			b.opts.ErrorHandler(err)
-			return
-		}
-		panic(err)
+		return err
 	}
 
 	b.mu.RLock()
@@ -192,12 +184,7 @@ func (b *EventBus) EmitConcurrent(e Event) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		err = fmt.Errorf("%w: %s", ErrNoHandlers, k)
-		if b.opts.ErrorHandler != nil {
-			b.opts.ErrorHandler(err)
-			return
-		}
-		panic(err)
+		return fmt.Errorf("%w: %s", ErrNoHandlers, k)
 	}
 
 	for _, h := range handlers {
@@ -208,19 +195,17 @@ func (b *EventBus) EmitConcurrent(e Event) {
 			fn(e)
 		}(h)
 	}
+	return nil
 }
 
 // EmitSync emits an event synchronously where handler functions are invoked sequentially
 // blocking until all handlers are done
-// calls ErrorHandler or panics if no handlers are registered for the event type
-func (b *EventBus) EmitSync(e Event) {
+// returns ErrInvalidEvent if the event is invalid
+// returns ErrNoHandlers if no handlers are registered for the event type
+func (b *EventBus) EmitSync(e Event) error {
 	k, err := resolveEventKey(e, b.opts.UseFullyQualifiedNames)
 	if err != nil {
-		if b.opts.ErrorHandler != nil {
-			b.opts.ErrorHandler(err)
-			return
-		}
-		panic(err)
+		return err
 	}
 
 	b.mu.RLock()
@@ -228,21 +213,18 @@ func (b *EventBus) EmitSync(e Event) {
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		err = fmt.Errorf("%w: %s", ErrNoHandlers, k)
-		if b.opts.ErrorHandler != nil {
-			b.opts.ErrorHandler(err)
-			return
-		}
-		panic(err)
+		return fmt.Errorf("%w: %s", ErrNoHandlers, k)
 	}
 
 	for _, h := range handlers {
 		h(e)
 	}
+	return nil
 }
 
 // Handle registers a handler for the given event type
-// returns error if the handler function is invalid or if the event type is invalid
+// returns ErrInvalidHandler if the handler function is invalid
+// returns ErrInvalidEvent if the event type is invalid
 func (b *EventBus) Handle(e Event, fn HandlerFunc) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -276,6 +258,8 @@ func (b *EventBus) Handlers() map[string][]HandlerFunc {
 }
 
 // Handle registers a handler func for the given event type on the provided handler
+// returns ErrInvalidHandler if the handler function is invalid
+// returns ErrInvalidEvent if the event type is invalid
 func Handle[T Event](h Handler, fn HandlerFunc) error {
 	if h == nil {
 		return fmt.Errorf("%w: handler must not be nil", ErrInvalidHandler)

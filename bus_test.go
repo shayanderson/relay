@@ -181,35 +181,28 @@ func TestEventBusEmitNoHandler(t *testing.T) {
 	t.Parallel()
 
 	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
-	defer func() {
-		want := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
-		if r := recover(); r == nil || r.(error).Error() != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	b.Emit(busTestEvent{})
-	t.Fatal("expected panic, got none")
+	wantErr := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
+	err := b.Emit(busTestEvent{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != wantErr {
+		t.Fatalf("expected error '%s', got '%v'", wantErr, err)
+	}
 }
 
-func TestEventBusEmitInvalidEventPanics(t *testing.T) {
+func TestEventBusEmitInvalidEventError(t *testing.T) {
 	t.Parallel()
 
 	b := NewBus()
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic, got none")
-		}
-		err, ok := r.(error)
-		if !ok {
-			t.Fatalf("expected panic error, got %T", r)
-		}
-		if err.Error() != "relay: invalid event: event must not be nil" {
-			t.Fatalf("expected panic 'relay: invalid event: event must not be nil', got %v", err)
-		}
-	}()
-
-	b.Emit(nil)
+	wantErr := "relay: invalid event: event must not be nil"
+	err := b.Emit(nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != wantErr {
+		t.Fatalf("expected error '%s', got '%v'", wantErr, err)
+	}
 }
 
 func TestEventBusEmitMultipleHandlers(t *testing.T) {
@@ -306,35 +299,27 @@ func TestEventBusEmitConcurrentNoHandler(t *testing.T) {
 	t.Parallel()
 
 	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
-	defer func() {
-		want := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
-		if r := recover(); r == nil || r.(error).Error() != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	b.EmitConcurrent(busTestEvent{})
-	t.Fatal("expected panic, got none")
+	wantErr := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
+	err := b.EmitConcurrent(busTestEvent{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != wantErr {
+		t.Fatalf("expected error '%s', got '%v'", wantErr, err)
+	}
 }
 
-func TestEventBusEmitConcurrentInvalidEventPanics(t *testing.T) {
+func TestEventBusEmitConcurrentInvalidEventError(t *testing.T) {
 	t.Parallel()
 
 	b := NewBus()
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic, got none")
-		}
-		err, ok := r.(error)
-		if !ok {
-			t.Fatalf("expected panic error, got %T", r)
-		}
-		if err.Error() != "relay: invalid event: event must not be nil" {
-			t.Fatalf("expected panic 'relay: invalid event: event must not be nil', got %v", err)
-		}
-	}()
-
-	b.EmitConcurrent(nil)
+	err := b.EmitConcurrent(nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("expected ErrInvalidEvent, got %v", err)
+	}
 }
 
 func TestEventBusEmitSync(t *testing.T) {
@@ -358,33 +343,27 @@ func TestEventBusEmitSyncNoHandler(t *testing.T) {
 	t.Parallel()
 
 	b := NewBus(BusOptions{UseFullyQualifiedNames: true})
-	defer func() {
-		want := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
-		if r := recover(); r == nil || r.(error).Error() != want {
-			t.Fatalf("expected panic '%s', got '%v'", want, r)
-		}
-	}()
-	b.EmitSync(busTestEvent{})
-	t.Fatal("expected panic, got none")
+	wantErr := "relay: no handlers: github.com/shayanderson/relay.busTestEvent"
+	err := b.EmitSync(busTestEvent{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != wantErr {
+		t.Fatalf("expected error '%s', got '%v'", wantErr, err)
+	}
 }
 
-func TestEventBusEmitSyncInvalidEventPanics(t *testing.T) {
+func TestEventBusEmitSyncInvalidEventError(t *testing.T) {
 	t.Parallel()
 
 	b := NewBus()
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic, got none")
-		}
-		err, ok := r.(error)
-		if !ok {
-			t.Fatalf("expected panic error, got %T", r)
-		}
-		if err.Error() != "relay: invalid event: event must not be nil" {
-			t.Fatalf("expected panic 'relay: invalid event: event must not be nil', got %v", err)
-		}
-	}()
+	err := b.EmitSync(nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("expected ErrInvalidEvent, got %v", err)
+	}
 
 	b.EmitSync(nil)
 }
@@ -440,12 +419,20 @@ func TestSetDefaultBusOptions(t *testing.T) {
 
 	o := setDefaultBusOptions(BusOptions{})
 	if o.MaxConcurrentHandlers != busDefaultMaxConcurrentHandlers {
-		t.Fatalf("expected default max handlers %d, got %d", busDefaultMaxConcurrentHandlers, o.MaxConcurrentHandlers)
+		t.Fatalf(
+			"expected default max handlers %d, got %d",
+			busDefaultMaxConcurrentHandlers,
+			o.MaxConcurrentHandlers,
+		)
 	}
 
 	o = setDefaultBusOptions(BusOptions{MaxConcurrentHandlers: -1})
 	if o.MaxConcurrentHandlers != busDefaultMaxConcurrentHandlers {
-		t.Fatalf("expected default max handlers %d, got %d", busDefaultMaxConcurrentHandlers, o.MaxConcurrentHandlers)
+		t.Fatalf(
+			"expected default max handlers %d, got %d",
+			busDefaultMaxConcurrentHandlers,
+			o.MaxConcurrentHandlers,
+		)
 	}
 
 	o = setDefaultBusOptions(BusOptions{MaxConcurrentHandlers: 8})
@@ -487,66 +474,6 @@ func TestEventBusHandleInvalidEvent(t *testing.T) {
 	err := b.Handle(nil, func(Event) {})
 	if err == nil {
 		t.Fatal("expected error, got nil")
-	}
-}
-
-func TestEventBusEmitErrorHandlerPaths(t *testing.T) {
-	t.Parallel()
-
-	var got []error
-	b := NewBus(BusOptions{ErrorHandler: func(err error) { got = append(got, err) }})
-
-	b.Emit(nil)
-	b.Emit(busTestEvent{})
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 errors, got %d", len(got))
-	}
-	if got[0] == nil {
-		t.Fatal("expected invalid event error")
-	}
-	if !errors.Is(got[1], ErrNoHandlers) {
-		t.Fatalf("expected ErrNoHandlers, got %v", got[1])
-	}
-}
-
-func TestEventBusEmitConcurrentErrorHandlerPaths(t *testing.T) {
-	t.Parallel()
-
-	var got []error
-	b := NewBus(BusOptions{ErrorHandler: func(err error) { got = append(got, err) }})
-
-	b.EmitConcurrent(nil)
-	b.EmitConcurrent(busTestEvent{})
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 errors, got %d", len(got))
-	}
-	if got[0] == nil {
-		t.Fatal("expected invalid event error")
-	}
-	if !errors.Is(got[1], ErrNoHandlers) {
-		t.Fatalf("expected ErrNoHandlers, got %v", got[1])
-	}
-}
-
-func TestEventBusEmitSyncErrorHandlerPaths(t *testing.T) {
-	t.Parallel()
-
-	var got []error
-	b := NewBus(BusOptions{ErrorHandler: func(err error) { got = append(got, err) }})
-
-	b.EmitSync(nil)
-	b.EmitSync(busTestEvent{})
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 errors, got %d", len(got))
-	}
-	if got[0] == nil {
-		t.Fatal("expected invalid event error")
-	}
-	if !errors.Is(got[1], ErrNoHandlers) {
-		t.Fatalf("expected ErrNoHandlers, got %v", got[1])
 	}
 }
 
