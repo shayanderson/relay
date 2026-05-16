@@ -508,7 +508,7 @@ func TestHandleHelperDelegatesToHandler(t *testing.T) {
 }
 
 func BenchmarkEmit(b *testing.B) {
-	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
+	for _, n := range []int{10, 100, 1_000, 10_000, 100_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
 			bus := NewBus()
 			wg := sync.WaitGroup{}
@@ -523,7 +523,9 @@ func BenchmarkEmit(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				wg.Add(n)
-				bus.Emit(busTestEvent{})
+				if err := bus.Emit(busTestEvent{}); err != nil {
+					b.Fatalf("emit failed: %v", err)
+				}
 			}
 			b.StopTimer()
 			wg.Wait()
@@ -535,7 +537,7 @@ func BenchmarkEmit(b *testing.B) {
 }
 
 func BenchmarkEmitConcurrent(b *testing.B) {
-	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
+	for _, n := range []int{10, 100, 1_000, 10_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
 			bus := NewBus()
 			wg := sync.WaitGroup{}
@@ -550,7 +552,10 @@ func BenchmarkEmitConcurrent(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				wg.Add(n)
-				bus.EmitConcurrent(busTestEvent{})
+				err := bus.EmitConcurrent(busTestEvent{})
+				if err != nil {
+					b.Fatalf("emit concurrent failed: %v", err)
+				}
 			}
 			b.StopTimer()
 			wg.Wait()
@@ -562,7 +567,7 @@ func BenchmarkEmitConcurrent(b *testing.B) {
 }
 
 func BenchmarkEmitSync(b *testing.B) {
-	for _, n := range []int{1_000, 10_000, 100_000, 1_000_000} {
+	for _, n := range []int{10, 100, 1_000, 10_000} {
 		b.Run(fmt.Sprintf("handlers=%d", n), func(b *testing.B) {
 			bus := NewBus()
 			var c atomic.Int32

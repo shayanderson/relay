@@ -128,10 +128,15 @@ func (b *EventBus) Cancel(fn HandlerFunc) {
 	for k, r := range b.handlers {
 		for i, h := range r {
 			if reflect.ValueOf(h).Pointer() == id {
-				b.handlers[k] = append(r[:i], r[i+1:]...)
+				// copy-on-write to preserve immutable handler snapshots for emit methods
+				next := make([]HandlerFunc, 0, len(r)-1)
+				next = append(next, r[:i]...)
+				next = append(next, r[i+1:]...)
 
-				if len(b.handlers[k]) == 0 { // clean up empty slice
+				if len(next) == 0 {
 					delete(b.handlers, k)
+				} else {
+					b.handlers[k] = next
 				}
 				return
 			}
@@ -151,7 +156,7 @@ func (b *EventBus) Emit(e Event) error {
 	}
 
 	b.mu.RLock()
-	handlers := append([]HandlerFunc{}, b.handlers[k]...)
+	handlers := b.handlers[k]
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
@@ -180,7 +185,7 @@ func (b *EventBus) EmitConcurrent(e Event) error {
 	}
 
 	b.mu.RLock()
-	handlers := append([]HandlerFunc{}, b.handlers[k]...)
+	handlers := b.handlers[k]
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
@@ -189,7 +194,7 @@ func (b *EventBus) EmitConcurrent(e Event) error {
 
 	for _, h := range handlers {
 		b.sem <- struct{}{} // acquire, block if maxConcurrentHandlers reached
-		// concurrent emit
+
 		go func(fn HandlerFunc) {
 			defer func() { <-b.sem }()
 			fn(e)
@@ -209,7 +214,7 @@ func (b *EventBus) EmitSync(e Event) error {
 	}
 
 	b.mu.RLock()
-	handlers := append([]HandlerFunc{}, b.handlers[k]...)
+	handlers := b.handlers[k]
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {
@@ -238,10 +243,12 @@ func (b *EventBus) Handle(e Event, fn HandlerFunc) error {
 		return err
 	}
 
-	if _, ok := b.handlers[k]; !ok {
-		b.handlers[k] = []HandlerFunc{}
-	}
-	b.handlers[k] = append(b.handlers[k], fn)
+	// copy-on-write to preserve immutable handler snapshots for emit methods
+	old := b.handlers[k]
+	next := make([]HandlerFunc, len(old)+1)
+	copy(next, old)
+	next[len(old)] = fn
+	b.handlers[k] = next
 	return nil
 }
 

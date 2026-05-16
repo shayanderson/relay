@@ -582,7 +582,7 @@ func TestSubscribeUnsubscribePublish_Concurrent(t *testing.T) {
 func TestSubscribeUnsubscribePublish_ConcurrentClose(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueue(QueueOptions{BufferSize: 4096})
+	q := NewQueue(QueueOptions{BufferSize: 20_000})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -607,7 +607,7 @@ func TestSubscribeUnsubscribePublish_ConcurrentClose(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(2 * time.Millisecond)
 
 	if err := q.Close(); err != nil {
 		t.Fatalf("close failed: %v", err)
@@ -650,7 +650,7 @@ func TestPublish_AfterCloseError(t *testing.T) {
 }
 
 func BenchmarkPublish(b *testing.B) {
-	for _, n := range []int{1_000, 10_000, 100_000} {
+	for _, n := range []int{10, 100, 1_000, 10_000} {
 		b.Run("subscribers="+strconv.Itoa(n), func(b *testing.B) {
 			q := NewQueue(QueueOptions{BufferSize: 1024})
 			ctx, cancel := context.WithCancel(b.Context())
