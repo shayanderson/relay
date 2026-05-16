@@ -181,7 +181,6 @@ func (q *EventQueue) Run(ctx context.Context) error {
 
 			q.mu.RLock()
 			subs, ok := q.subs[r.key]
-			subs = append([]SubscriberFunc(nil), subs...) // copy to avoid holding the lock
 			q.mu.RUnlock()
 
 			if !ok || len(subs) == 0 {
@@ -204,8 +203,15 @@ func (q *EventQueue) Subscribe(e Event, fn SubscriberFunc) error {
 	}
 
 	q.mu.Lock()
-	q.subs[k] = append(q.subs[k], fn)
-	q.mu.Unlock()
+	defer q.mu.Unlock()
+
+	// copy-on-write to preserve immutable subscriber snapshots for Run
+	old := q.subs[k]
+	next := make([]SubscriberFunc, len(old)+1)
+	copy(next, old)
+	next[len(old)] = fn
+	q.subs[k] = next
+
 	return nil
 }
 
@@ -229,11 +235,17 @@ func (q *EventQueue) Unsubscribe(e Event, fn SubscriberFunc) error {
 
 	for i, sub := range subs {
 		if reflect.ValueOf(sub).Pointer() == fnID {
-			q.subs[k] = append(subs[:i], subs[i+1:]...)
+			// copy-on-write to preserve immutable subscriber snapshots for Run
+			next := make([]SubscriberFunc, 0, len(subs)-1)
+			next = append(next, subs[:i]...)
+			next = append(next, subs[i+1:]...)
 
-			if len(q.subs[k]) == 0 {
+			if len(next) == 0 {
 				delete(q.subs, k)
+			} else {
+				q.subs[k] = next
 			}
+
 			return nil
 		}
 	}
