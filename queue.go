@@ -253,7 +253,7 @@ func (q *EventQueue) Unsubscribe(e Event, fn SubscriberFunc) error {
 }
 
 // Subscribe registers a subscriber function for the given event type on the provided subscriber
-func Subscribe[T Event](s Subscriber, fn SubscriberFunc) error {
+func Subscribe[T Event](s Subscriber, fn func(event T)) error {
 	if s == nil {
 		return fmt.Errorf("%w: subscriber must not be nil", ErrInvalidSubscriber)
 	}

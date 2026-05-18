@@ -267,7 +267,7 @@ func (b *EventBus) Handlers() map[string][]HandlerFunc {
 // Handle registers a handler func for the given event type on the provided handler
 // returns ErrInvalidHandler if the handler function is invalid
 // returns ErrInvalidEvent if the event type is invalid
-func Handle[T Event](h Handler, fn HandlerFunc) error {
+func Handle[T Event](h Handler, fn func(event T)) error {
 	if h == nil {
 		return fmt.Errorf("%w: handler must not be nil", ErrInvalidHandler)
 	}

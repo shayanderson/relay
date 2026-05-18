@@ -444,7 +444,7 @@ func TestSetDefaultBusOptions(t *testing.T) {
 func TestHandleHelper(t *testing.T) {
 	t.Parallel()
 
-	err := Handle[busTestEvent](nil, func(Event) {})
+	err := Handle(nil, func(busTestEvent) {})
 	if err == nil {
 		t.Fatal("expected error for nil handler")
 	}
@@ -495,7 +495,7 @@ func TestHandleHelperDelegatesToHandler(t *testing.T) {
 	t.Parallel()
 
 	stub := &handleHelperStub{}
-	err := Handle[busTestEvent](stub, func(e Event) {})
+	err := Handle(stub, func(e busTestEvent) {})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}

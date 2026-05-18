@@ -246,7 +246,7 @@ func TestNewSubscriberFunc_Success(t *testing.T) {
 func TestSubscribeHelper_NilSubscriber(t *testing.T) {
 	t.Parallel()
 
-	err := Subscribe[queueTestEvent](nil, func(Event) {})
+	err := Subscribe(nil, func(queueTestEvent) {})
 	if err == nil {
 		t.Fatal("expected error for nil subscriber")
 	}
@@ -260,15 +260,20 @@ func TestSubscribeHelper_DelegatesToSubscriber(t *testing.T) {
 
 	stub := &queueSubscribeStub{}
 	called := false
-	err := Subscribe[queueTestEvent](stub, func(event Event) { called = true })
+	err := Subscribe(stub, func(event queueTestEvent) { called = true })
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 	if !stub.called {
 		t.Fatal("expected subscriber Subscribe to be called")
 	}
-	if stub.e != nil {
-		t.Fatalf("expected helper to pass zero Event (nil), got %T", stub.e)
+	e, ok := stub.e.(queueTestEvent)
+	if !ok {
+		t.Fatalf("expected queueTestEvent, got %T", stub.e)
+	}
+
+	if e != (queueTestEvent{}) {
+		t.Fatalf("expected zero-value queueTestEvent, got %+v", e)
 	}
 	if stub.fn == nil {
 		t.Fatal("expected wrapped subscriber function to be non-nil")

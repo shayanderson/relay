@@ -139,7 +139,7 @@ func (*EventBus) Handlers() map[string][]HandlerFunc
 - `Handle[T Event](h Handler, fn func(event T)) error`: Registers a handler for type `T` on the provided bus.
   - Handlers for type `T` are different from handlers for type `*T`. A separate handler must be registered for each if using both.
 - `NewBus(options ...BusOptions) *EventBus`: Creates a new bus instance with the given options.
-- `NewHandlerFunc[T Event](fn func(event T)) (T, HandlerFunc)`: Helper function to create a handler function for a specific event type `T`.
+- `NewHandlerFunc[T Event](fn func(event T)) (T, HandlerFunc)`: Helper function that returns the zero-value event type `T` and a wrapped handler function.
 
 ### Methods
 
@@ -258,8 +258,9 @@ func (*EventQueue) Unsubscribe(Event, SubscriberFunc) error
 ### Functions
 
 - `NewQueue(options ...QueueOptions) *EventQueue`: Creates a new queue instance with the given options.
-- `NewSubscriberFunc[T Event](fn func(event T)) (T, SubscriberFunc)`: Helper function to create a subscriber function for a specific event type `T`.
-- `Subscribe[T Event](s Subscriber, fn func(event T)) error`: Registers a subscriber for type `T` on the provided queue. Returns an error if the subscriber function is invalid or if the event type is invalid.
+- `NewSubscriberFunc[T Event](fn func(event T)) (T, SubscriberFunc)`: Helper function that returns the zero-value event type `T` and a wrapped subscriber function.
+- `Subscribe[T Event](s Subscriber, fn func(event T)) error`: Registers a subscriber for type `T` on the provided queue.
+  - Subscribers for type `T` are different from subscribers for type `*T`. A separate subscriber must be registered for each if using both.
 
 ### Methods
 
